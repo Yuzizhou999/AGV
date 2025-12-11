@@ -11,12 +11,12 @@ SAFETY_DISTANCE = 2.0  # 安全距离
 
 # ========== 上料口配置 ==========
 NUM_LOADING_STATIONS = 2  # 上料口数量
-LOADING_POSITIONS = [20.0, 60.0]  # 上料口位置
+LOADING_POSITIONS = [20.0, 30.0]  # 上料口位置
 LOADING_STATION_SLOTS = 2  # 每个上料口的工位数（1#, 2#）
 
 # ========== 下料口配置 ==========
 NUM_UNLOADING_STATIONS = 3  # 下料口数量
-UNLOADING_POSITIONS = [30.0, 50.0, 80.0]  # 下料口位置
+UNLOADING_POSITIONS = [60.0, 70.0, 80.0]  # 下料口位置
 UNLOADING_STATION_SLOTS = 2  # 每个下料口的工位数
 
 # ========== 货物配置 ==========
@@ -29,14 +29,18 @@ LOADING_TIME = 15.0  # 单工位上料耗时(秒)
 UNLOADING_TIME = 15.0  # 单工位下料耗时(秒)
 
 # ========== 仿真配置 ==========
-EPISODE_DURATION = 600  # 训练时使用600秒（10分钟）以加速训练，完整仿真可改为 8 * 3600
+EPISODE_DURATION_TRAIN = 600  # 训练时使用600秒（10分钟）以加速训练
+EPISODE_DURATION_EVAL = 8 * 3600  # 完整评估使用8小时（28800秒）
+EPISODE_DURATION = EPISODE_DURATION_TRAIN  # 默认使用训练时长
 HIGH_LEVEL_DECISION_INTERVAL = 1.0  # 高层决策时间间隔(秒)
 LOW_LEVEL_CONTROL_INTERVAL = 1.0  # 低层控制时间间隔(秒)，训练时用1秒加速
 
 # ========== 奖励参数 ==========
 REWARD_DELIVERY = 1.0  # 完成卸货奖励
+REWARD_TIMEOUT_PICKUP = 5.0  # 取走超时货物的额外奖励（优先级激励）
 REWARD_WAIT_PENALTY_COEFF = 0.01  # 等待惩罚系数
-REWARD_TIMEOUT_PENALTY = -10.0  # 超时惩罚
+REWARD_TIMEOUT_PENALTY = -10.0  # 货物超时惩罚
+REWARD_TIMEOUT_WAIT_PENALTY_COEFF = 0.05  # 超时货物的等待惩罚系数（更高）
 REWARD_SAFETY_VIOLATION = -100.0  # 安全距离违反惩罚
 REWARD_SPEED_CHANGE_PENALTY = -0.1  # 速度变化惩罚系数
 

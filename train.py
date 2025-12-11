@@ -26,17 +26,17 @@ class TrainingManager:
         self.env = Environment(seed=42)
         
         # 计算观测维度
-        # 高层观测：2台车(4) + 2个上料口(3) + 全局(2) = 9
-        high_level_obs_dim = MAX_VEHICLES * 4 + NUM_LOADING_STATIONS * 3 + 2
-        high_level_action_dim = (MAX_VEHICLES * NUM_LOADING_STATIONS * 2) + \
-                               (MAX_VEHICLES * 2 * NUM_UNLOADING_STATIONS * 2)
+        # 高层观测：全局(3) + 车辆(4*n) + 上料口(2*n) + 下料口(2*n) + 决策点(3*max_decisions)
+        # 简化为固定维度
+        high_level_obs_dim = 100  # 预留足够空间
+        max_decisions = NUM_LOADING_STATIONS * 2 + MAX_VEHICLES * 2  # 上料工位数 + 车辆工位数
         
-        # 低层观测：位置(1) + 速度(1) + 前车距离(n-1) + 目标距离(1) = 3 + n
-        low_level_obs_dim = 3 + MAX_VEHICLES
+        # 低层观测：位置(1) + 速度(1) + 其他车距离(n-1) + 目标距离(1) = n + 2
+        low_level_obs_dim = MAX_VEHICLES + 2
         low_level_action_dim = 3
         
         # 初始化智能体
-        self.high_level_agent = HighLevelAgent(high_level_obs_dim, high_level_action_dim, self.device)
+        self.high_level_agent = HighLevelAgent(high_level_obs_dim, max_decisions, self.device)
         self.low_level_agent = LowLevelAgent(low_level_obs_dim, low_level_action_dim, self.device)
         
         # 初始化控制器
@@ -63,26 +63,57 @@ class TrainingManager:
         
         # 高层决策时间管理
         next_high_level_decision = 0.0
+        last_high_level_state = None
+        last_high_level_actions = None
         
         while self.env.current_time < EPISODE_DURATION:
-            # 高层决策（事件驱动）
-            high_level_action = None
+            # 高层决策（定时决策）
+            high_level_action_list = []
             if self.env.current_time >= next_high_level_decision:
-                high_level_action = self.high_level_controller.compute_action(obs)
+                # 保存当前状态用于学习
+                current_state = self.high_level_controller._extract_state_vector(obs)
+                
+                # 获取多个高层动作（返回列表）
+                high_level_action_list = self.high_level_controller.compute_action(obs)
+                
+                # 存储转移（如果有上一步）
+                if last_high_level_state is not None and last_high_level_actions is not None:
+                    self.high_level_agent.store_transition(
+                        last_high_level_state,
+                        last_high_level_actions,
+                        episode_reward,  # 简化：使用累计奖励
+                        current_state,
+                        False
+                    )
+                
+                # 更新为下一次存储
+                last_high_level_state = current_state
+                last_high_level_actions = self.high_level_controller.agent.last_actions if hasattr(self.high_level_controller.agent, 'last_actions') else None
+                
+                # 从 compute_action 中获取实际使用的动作
+                if hasattr(self.high_level_controller, 'decision_context'):
+                    ctx = self.high_level_controller.decision_context
+                    if ctx and 'decisions' in ctx:
+                        # 构造动作向量（用于存储）
+                        action_indices = [0] * self.high_level_agent.max_decisions
+                        for i in range(min(len(high_level_action_list), self.high_level_agent.max_decisions)):
+                            action_indices[i] = 1 if i < len(high_level_action_list) else 0
+                        last_high_level_actions = action_indices
+                
                 next_high_level_decision = self.env.current_time + HIGH_LEVEL_DECISION_INTERVAL
             
             # 低层控制（固定时间间隔）
             low_level_actions = self.low_level_controller.compute_actions()
             
-            # 执行一步
-            obs, reward, done = self.env.step(high_level_action, low_level_actions)
+            # 执行一步（传递高层动作列表）
+            obs, reward, done = self.env.step(high_level_action_list, low_level_actions)
             episode_reward += reward
             step_count += 1
             
             # 训练智能体（每100步训练一次以加速）
             if step_count % 100 == 0:
-                self.high_level_agent.train(batch_size=BATCH_SIZE)
-                self.low_level_agent.train(batch_size=BATCH_SIZE)
+                high_loss = self.high_level_agent.train(batch_size=BATCH_SIZE)
+                low_loss = self.low_level_agent.train(batch_size=BATCH_SIZE)
             
             # 打印进度（每个episode内部）
             if step_count % 200 == 0:
@@ -90,6 +121,16 @@ class TrainingManager:
                 print(f"    Episode进度: {progress:.1f}% | 步数: {step_count} | 货物: {len(self.env.cargos)} | 完成: {self.env.completed_cargos}", flush=True)
             
             if done:
+                # 存储最后一步
+                if last_high_level_state is not None and last_high_level_actions is not None:
+                    final_state = self.high_level_controller._extract_state_vector(obs)
+                    self.high_level_agent.store_transition(
+                        last_high_level_state,
+                        last_high_level_actions,
+                        episode_reward,
+                        final_state,
+                        True
+                    )
                 break
         
         # 统计
