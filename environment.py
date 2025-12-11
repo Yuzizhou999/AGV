@@ -388,12 +388,11 @@ class Environment:
         return completed_ids
     
     def _check_timeouts(self):
-        """检查超时货物"""
-        for cargo in self.cargos.values():
-            if cargo.completion_time is not None:
-                continue
-            if cargo.is_timeout(self.current_time):
-                self.timed_out_cargos += 1
+        """统计超时货物数量"""
+        timeout_count = sum(1 for c in self.cargos.values()
+                           if c.completion_time is None 
+                           and c.is_timeout(self.current_time))
+        self.timed_out_cargos = timeout_count  # 直接赋值，不累加
     
     def _calculate_reward(self, completed_ids: List[int]) -> float:
         """计算奖励"""

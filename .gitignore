@@ -1,3 +1,5 @@
 .venv
 *.md
 requirements.txt
+models
+.gitignore

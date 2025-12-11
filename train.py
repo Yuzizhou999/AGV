@@ -60,12 +60,12 @@ class TrainingManager:
         # 全局步数统计
         self.total_steps = 0
     
-    def train_episode(self, episode_idx: int) -> Tuple[float, int, int, float]:
+    def train_episode(self, episode_idx: int) -> Tuple[float, int, int, float, int, int, int]:
         """
         训练一个episode
         
         Returns:
-            (total_reward, completed_count, timeout_count, avg_wait_time)
+            (total_reward, completed_count, timeout_count, avg_wait_time, total_cargos, waiting_cargos, on_vehicle_cargos)
         """
         obs = self.env.reset()
         episode_reward = 0.0
@@ -154,13 +154,18 @@ class TrainingManager:
         # 统计
         completed_count = self.env.completed_cargos
         timeout_count = self.env.timed_out_cargos
+        total_cargos = self.env.cargo_counter
+        waiting_cargos = sum(1 for c in self.env.cargos.values() 
+                           if c.completion_time is None and c.current_location.startswith("IP_"))
+        on_vehicle_cargos = sum(1 for c in self.env.cargos.values()
+                               if c.completion_time is None and c.current_location.startswith("vehicle_"))
         avg_wait_time = self.env.total_wait_time / max(1, self.env.cargo_counter)
         
         # 在episode结束后衰减探索率
         self.high_level_agent.decay_epsilon()
         self.low_level_agent.decay_epsilon()
         
-        return episode_reward, completed_count, timeout_count, avg_wait_time
+        return episode_reward, completed_count, timeout_count, avg_wait_time, total_cargos, waiting_cargos, on_vehicle_cargos
     
     def train(self):
         """训练整个系统"""
@@ -188,7 +193,7 @@ class TrainingManager:
         for episode in range(self.num_episodes):
             episode_start_time = time.time()
             
-            episode_reward, completed, timeouts, avg_wait = self.train_episode(episode)
+            episode_reward, completed, timeouts, avg_wait, total_cargos, waiting_cargos, on_vehicle_cargos = self.train_episode(episode)
             
             episode_time = time.time() - episode_start_time
             
@@ -207,6 +212,9 @@ class TrainingManager:
                   f"奖励: {episode_reward:9.2f} | "
                   f"完成: {completed:3d} | "
                   f"超时: {timeouts:2d} | "
+                  f"总货: {total_cargos:3d} | "
+                  f"待取: {waiting_cargos:2d} | "
+                  f"在车: {on_vehicle_cargos:2d} | "
                   f"等待: {avg_wait:6.2f}s | "
                   f"ε: {current_epsilon:.3f} | "
                   f"缓冲: {replay_size:6d} | "

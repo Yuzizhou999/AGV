@@ -103,6 +103,11 @@ class HighLevelAgent:
         self.steps += 1
         
         return loss.item()
+    
+    def decay_epsilon(self):
+        """衰减探索率（每个episode结束后调用）"""
+        self.epsilon = max(EPSILON_END, self.epsilon * EPSILON_DECAY)
+
 
 class HighLevelController:
     """高层控制器：决策组件"""
