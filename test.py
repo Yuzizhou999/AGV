@@ -76,10 +76,41 @@ class TestEnvironment(unittest.TestCase):
         vehicle0 = self.env.vehicles[0]
         vehicle1 = self.env.vehicles[1]
         
-        # 移动车0接近车1
-        vehicle0.position = vehicle1.position - SAFETY_DISTANCE + 0.5
+        # 将车辆0放在车辆1前面很近的位置（沿行驶方向）
+        # 车辆0在位置48，车辆1在位置50，车辆0继续前进会超过车辆1
+        vehicle0.position = vehicle1.position - SAFETY_DISTANCE + 0.5  # 48.5
+        vehicle0.velocity = 0.0
         
-        # 检查是否会被约束
+        # 以MAX_SPEED前进0.5秒后，new_position = 48.5 + 5*0.5 = 51.0
+        # 此时车辆0在车辆1(50)前面，需要检查从51到50的环形距离
+        # 环形距离 = 100 - 51 + 50 = 99，这是安全的
+        
+        # 正确的测试：将车辆0放在车辆1的后面很近的位置
+        # 车辆1在50，我们把车辆0放在52（即车辆1后面，距离为100-52+50=98）
+        # 不对，环形轨道上，如果车辆0在位置52，车辆1在50，
+        # 那么车辆0到车辆1的前向距离是 50 - 52 + 100 = 98（如果52 > 50）
+        
+        # 重新设计：车辆0在车辆1的前方不远处，如果车辆0减速或停止，车辆1会追上
+        # 但这里我们测试的是车辆0的安全检查
+        # 安全检查是：车辆0移动后，与前方车辆的距离
+        
+        # 设置场景：车辆1在10的位置，车辆0在8的位置
+        # 车辆0向前移动，需要与前方的车辆1保持距离
+        vehicle1.position = 10.0
+        vehicle0.position = 10.0 - SAFETY_DISTANCE + 0.5  # 8.5
+        
+        # 车辆0以MAX_SPEED前进：new_position = 8.5 + 5*0.5 = 11.0
+        # 此时车辆0(11.0)已经超过车辆1(10.0)，前向距离为 100 - 11 + 10 = 99
+        # 这仍然是安全的
+        
+        # 正确场景：车辆0在车辆1后面，会撞上车辆1
+        # 车辆1在10，车辆0在9.5（距离0.5 < SAFETY_DISTANCE=2）
+        # 但是安全检查计算的是移动后的new_position
+        vehicle1.position = 10.0
+        vehicle0.position = 7.0  # 车辆0在车辆1后面3米
+        
+        # 如果车辆0以MAX_SPEED=5前进0.5秒，new_position = 7 + 2.5 = 9.5
+        # 前向距离 = 10 - 9.5 = 0.5 < SAFETY_DISTANCE(2)，不安全！
         is_safe = self.env._check_safety_distance(0, MAX_SPEED)
         self.assertFalse(is_safe)
     
@@ -122,7 +153,8 @@ class TestVehicle(unittest.TestCase):
             position=10.0,
             velocity=1.0,
             slots=[None, None],
-            slot_operation_end_time=[0.0, 0.0]
+            slot_operation_end_time=[0.0, 0.0],
+            is_loading_unloading=False
         )
     
     def test_empty_slot_detection(self):

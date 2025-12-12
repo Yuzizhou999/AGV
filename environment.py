@@ -28,13 +28,26 @@ class Cargo:
     target_unloading_station: Optional[int] = None  # 目标下料口
     target_slot: Optional[int] = None  # 目标下料口的工位
     completion_time: Optional[float] = None  # 完成时间
+    assigned_vehicle: Optional[int] = None  # 分配的车辆ID（用于上料任务）
+    assigned_vehicle_slot: Optional[int] = None  # 分配的车辆工位
+    loading_start_time: Optional[float] = None  # 上料开始时间
+    unloading_start_time: Optional[float] = None  # 下料开始时间
+    picked_up_time: Optional[float] = None  # 被取走的时间（小车开始取货的时间，用于超时判断）
     
     def wait_time(self, current_time: float) -> float:
-        """计算等待时间"""
+        """计算等待时间（从到达到被取走）"""
+        # 如果已经被取走（小车开始取货），等待时间就是到被取走的时间
+        if self.picked_up_time is not None:
+            return self.picked_up_time - self.arrival_time
+        # 如果还未被取走，等待时间是到当前时间
         return current_time - self.arrival_time
     
     def is_timeout(self, current_time: float) -> bool:
-        """检查是否超时"""
+        """检查是否超时（只在上料前计算）"""
+        # 如果已经被取走（小车开始取货了），就不再超时
+        if self.picked_up_time is not None:
+            return False
+        # 否则检查等待时间是否超过阈值
         return self.wait_time(current_time) > CARGO_TIMEOUT
 
 
@@ -46,6 +59,7 @@ class Vehicle:
     velocity: float  # 当前速度
     slots: List[Optional[int]]  # 两个工位上的货物ID (None表示空)
     slot_operation_end_time: List[float]  # 每个工位的操作结束时间
+    is_loading_unloading: bool = False  # 是否正在进行上料/下料操作（锁定移动）
     
     def __post_init__(self):
         if len(self.slots) != 2:
@@ -66,13 +80,18 @@ class Vehicle:
     
     def distance_to(self, position: float) -> float:
         """计算到目标位置的距离(考虑环形轨道)"""
-        direct = abs(position - self.position)
-        wrap = TRACK_LENGTH - direct
-        return min(direct, wrap)
+        direct = position - self.position
+        if direct < 0:
+            direct += TRACK_LENGTH
+        return direct
     
     def is_aligned_with(self, station_position: float, tolerance: float = 1.0) -> bool:
-        """判断是否与某工位对齐"""
-        return self.distance_to(station_position) <= tolerance
+        """判断是否与某工位对齐（考虑双向距离）"""
+        # 计算双向距离，取最小值
+        forward_dist = self.distance_to(station_position)  # 顺时针距离
+        backward_dist = TRACK_LENGTH - forward_dist  # 逆时针距离
+        min_dist = min(forward_dist, backward_dist)
+        return min_dist <= tolerance
 
 
 class LoadingStation:
@@ -148,7 +167,8 @@ class Environment:
                 position=float(i * TRACK_LENGTH / MAX_VEHICLES),
                 velocity=0.0,
                 slots=[None, None],
-                slot_operation_end_time=[0.0, 0.0]
+                slot_operation_end_time=[0.0, 0.0],
+                is_loading_unloading=False
             )
         
         # 上料口
@@ -167,7 +187,8 @@ class Environment:
         
         # 事件管理
         self.current_time = 0.0
-        self.next_arrival_time = np.random.uniform(ARRIVAL_INTERVAL_MIN, ARRIVAL_INTERVAL_MAX)
+        # 货物到达间隔使用随机整数（5-15秒）
+        self.next_arrival_time = float(np.random.randint(ARRIVAL_INTERVAL_MIN, ARRIVAL_INTERVAL_MAX + 1))
         
         # 统计信息
         self.completed_cargos = 0
@@ -215,8 +236,8 @@ class Environment:
                 new_cargo_ids.append(self.cargo_counter)
                 self.cargo_counter += 1
             
-            # 计划下一次到达
-            self.next_arrival_time += np.random.uniform(ARRIVAL_INTERVAL_MIN, ARRIVAL_INTERVAL_MAX)
+            # 计划下一次到达（使用随机整数5-15秒）
+            self.next_arrival_time += float(np.random.randint(ARRIVAL_INTERVAL_MIN, ARRIVAL_INTERVAL_MAX + 1))
         
         return new_cargo_ids
     
@@ -244,6 +265,10 @@ class Environment:
         # 执行高层任务分配
         self._execute_high_level_action(high_level_action)
         
+        # 处理上料和下料操作（需要在位置更新后执行）
+        self._process_loading_operations()
+        self._process_unloading_operations()
+        
         # 检查完成情况
         completed_ids = self._check_completions()
         
@@ -261,6 +286,12 @@ class Environment:
         """执行低层控制：更新车辆位置和速度"""
         for vehicle_id, action in actions.items():
             vehicle = self.vehicles[vehicle_id]
+            
+            # 如果车辆正在进行上料/下料操作，强制锁定不移动
+            if vehicle.is_loading_unloading:
+                vehicle.velocity = 0.0  # 强制停止
+                # 不更新位置，直接跳过
+                continue
             
             # action: 0=减速, 1=保持, 2=加速
             if action == 0:
@@ -294,6 +325,10 @@ class Environment:
         
         for other_id, other_vehicle in self.vehicles.items():
             if other_id == vehicle_id:
+                continue
+            
+            # 如果另一辆车正在上下料（被锁定不动），跳过安全距离检查
+            if other_vehicle.is_loading_unloading:
                 continue
             
             # 计算距离（沿行驶方向）
@@ -338,23 +373,54 @@ class Environment:
                     cargo.target_slot = slot_idx
     
     def _assign_loading_task(self, cargo_id: int, vehicle_id: int, slot_idx: int):
-        """分配上料任务"""
+        """分配上料任务（只标记任务，实际上料在车辆对齐时执行）"""
         cargo = self.cargos[cargo_id]
-        vehicle = self.vehicles[vehicle_id]
-        loading_station = self.loading_stations[cargo.loading_station]
-        
-        # 从上料口移除货物
-        loading_station.slots[cargo.loading_slot] = None
-        
-        # 放到车上
-        vehicle.slots[slot_idx] = cargo_id
-        cargo.current_location = f"vehicle_{vehicle_id}_{slot_idx}"
+        # 标记任务分配
+        cargo.assigned_vehicle = vehicle_id
+        cargo.assigned_vehicle_slot = slot_idx
     
-    def _check_completions(self) -> List[int]:
-        """检查是否有货物完成"""
-        completed_ids = []
-        
-        # 检查车上的货物是否可以卸货
+    def _process_loading_operations(self):
+        """处理上料操作：检查车辆是否对齐上料口，执行上料"""
+        for cargo in self.cargos.values():
+            # 只处理在上料口等待且已分配车辆的货物
+            if (cargo.completion_time is not None or 
+                cargo.assigned_vehicle is None or
+                not cargo.current_location.startswith("IP_")):
+                continue
+            
+            vehicle = self.vehicles[cargo.assigned_vehicle]
+            loading_station = self.loading_stations[cargo.loading_station]
+            slot_idx = cargo.assigned_vehicle_slot
+            
+            # 检查车辆是否对齐上料口
+            if not vehicle.is_aligned_with(loading_station.position):
+                cargo.loading_start_time = None  # 未对齐则重置开始时间
+                vehicle.is_loading_unloading = False  # 解除锁定
+                continue
+            
+            # 检查车辆工位是否仍然空闲
+            if vehicle.slots[slot_idx] is not None:
+                continue
+            
+            # 开始计时或检查是否完成
+            if cargo.loading_start_time is None:
+                cargo.loading_start_time = self.current_time
+                cargo.picked_up_time = self.current_time  # 记录被取走的时间
+                vehicle.is_loading_unloading = True  # 锁定车辆移动
+            
+            # 检查上料是否完成（耗时15秒）
+            if self.current_time - cargo.loading_start_time >= LOADING_TIME:
+                # 执行上料：从上料口移除货物，放到车上
+                loading_station.slots[cargo.loading_slot] = None
+                vehicle.slots[slot_idx] = cargo.id
+                cargo.current_location = f"vehicle_{cargo.assigned_vehicle}_{slot_idx}"
+                cargo.loading_start_time = None
+                vehicle.is_loading_unloading = False  # 上料完成，解除锁定
+                cargo.current_location = f"vehicle_{cargo.assigned_vehicle}_{slot_idx}"
+                cargo.loading_start_time = None
+    
+    def _process_unloading_operations(self):
+        """处理下料操作：检查车辆是否对齐下料口，执行下料"""
         for vehicle_id, vehicle in self.vehicles.items():
             for slot_idx, cargo_id in enumerate(vehicle.slots):
                 if cargo_id is None:
@@ -368,22 +434,37 @@ class Environment:
                 
                 unloading_station = self.unloading_stations[cargo.target_unloading_station]
                 
-                # 检查是否对齐
+                # 检查是否对齐下料口
                 if not vehicle.is_aligned_with(unloading_station.position):
+                    cargo.unloading_start_time = None  # 未对齐则重置开始时间
+                    vehicle.is_loading_unloading = False  # 解除锁定
                     continue
                 
-                # 检查操作是否完成
-                if vehicle.slot_operation_end_time[slot_idx] > 0:
-                    continue
+                # 开始计时或检查是否完成
+                if cargo.unloading_start_time is None:
+                    cargo.unloading_start_time = self.current_time
+                    vehicle.is_loading_unloading = True  # 锁定车辆移动
                 
-                # 执行卸货
-                vehicle.slots[slot_idx] = None
-                unloading_station.slots[cargo.target_slot] = cargo_id
-                cargo.current_location = f"OP_{cargo.target_unloading_station}_{cargo.target_slot}"
-                cargo.completion_time = self.current_time
-                
-                completed_ids.append(cargo_id)
-                self.completed_cargos += 1
+                # 检查下料是否完成（耗时15秒）
+                if self.current_time - cargo.unloading_start_time >= UNLOADING_TIME:
+                    # 执行下料：从车上移除货物
+                    vehicle.slots[slot_idx] = None
+                    unloading_station.slots[cargo.target_slot] = cargo_id
+                    cargo.current_location = f"OP_{cargo.target_unloading_station}_{cargo.target_slot}"
+                    cargo.completion_time = self.current_time
+                    cargo.unloading_start_time = None
+                    self.completed_cargos += 1
+                    vehicle.is_loading_unloading = False  # 下料完成，解除锁定
+
+    def _check_completions(self) -> List[int]:
+        """检查是否有货物完成（返回本步完成的货物ID列表）"""
+        completed_ids = []
+        
+        # 检查在本时间步完成的货物
+        for cargo in self.cargos.values():
+            if (cargo.completion_time is not None and 
+                abs(cargo.completion_time - self.current_time) < LOW_LEVEL_CONTROL_INTERVAL / 2):
+                completed_ids.append(cargo.id)
         
         return completed_ids
     
@@ -405,8 +486,9 @@ class Environment:
         for cargo in self.cargos.values():
             if cargo.completion_time is None and cargo.id not in completed_ids:
                 reward -= REWARD_WAIT_PENALTY_COEFF * cargo.wait_time(self.current_time) * LOW_LEVEL_CONTROL_INTERVAL
-        
-        # 超时惩罚（在_check_timeouts中检查）
+                # 超时货物额外惩罚（优先级提升的体现）
+                if cargo.is_timeout(self.current_time):
+                    reward += REWARD_TIMEOUT_PENALTY * LOW_LEVEL_CONTROL_INTERVAL / CARGO_TIMEOUT
         
         return reward
     
@@ -442,15 +524,20 @@ class Environment:
             }
             unloading_obs.append(station_obs)
         
-        # 待取货物信息
+        # 待取货物信息（超时货物优先级更高，排在前面）
         waiting_cargos = []
         for cargo in self.cargos.values():
             if cargo.completion_time is None and cargo.current_location.startswith("IP_"):
                 waiting_cargos.append({
                     'id': cargo.id,
                     'wait_time': cargo.wait_time(self.current_time),
-                    'is_timeout': cargo.is_timeout(self.current_time)
+                    'is_timeout': cargo.is_timeout(self.current_time),
+                    'loading_station': cargo.loading_station,
+                    'loading_slot': cargo.loading_slot,
+                    'priority': 1 if cargo.is_timeout(self.current_time) else 0  # 超时货物优先级提升
                 })
+        # 按优先级排序，超时货物优先
+        waiting_cargos.sort(key=lambda x: (-x['priority'], -x['wait_time']))
         
         # 全局信息
         global_info = {

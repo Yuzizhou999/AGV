@@ -144,23 +144,40 @@ class HighLevelController:
         # 统计可用动作
         available_actions = []
         
-        # 检查是否有待取货物
+        # 检查是否有待取货物（已按优先级排序，超时货物在前）
         waiting_cargos = observation.get('waiting_cargos', [])
         available_vehicles = {v_id: v for v_id, v in enumerate(observation.get('vehicles', []))}
         
-        # 生成上料任务动作
+        # 获取已分配的车辆工位（避免重复分配）
+        assigned_vehicle_slots = set()
+        for cargo in self.env.cargos.values():
+            if (cargo.assigned_vehicle is not None and 
+                cargo.current_location.startswith("IP_")):
+                assigned_vehicle_slots.add((cargo.assigned_vehicle, cargo.assigned_vehicle_slot))
+        
+        # 生成上料任务动作（优先处理超时货物）
         for cargo_info in waiting_cargos:
             cargo_id = cargo_info['id']
+            cargo = self.env.cargos[cargo_id]
+            # 跳过已分配的货物
+            if cargo.assigned_vehicle is not None:
+                continue
+            priority = cargo_info.get('priority', 0)
             # 查找车辆
             for vehicle_id, vehicle_obs in available_vehicles.items():
-                if self.env.vehicles[vehicle_id].has_empty_slot():
-                    slot_idx = self.env.vehicles[vehicle_id].get_empty_slot_idx()
-                    available_actions.append({
-                        'type': 'assign_loading',
-                        'cargo_id': cargo_id,
-                        'vehicle_id': vehicle_id,
-                        'slot_idx': slot_idx
-                    })
+                vehicle = self.env.vehicles[vehicle_id]
+                # 检查每个工位
+                for slot_idx in range(2):
+                    if (vehicle.slots[slot_idx] is None and 
+                        (vehicle_id, slot_idx) not in assigned_vehicle_slots):
+                        available_actions.append({
+                            'type': 'assign_loading',
+                            'cargo_id': cargo_id,
+                            'vehicle_id': vehicle_id,
+                            'slot_idx': slot_idx,
+                            'priority': priority  # 保留优先级信息
+                        })
+                        break  # 每个车辆只选择一个空闲工位
         
         # 生成下料目标动作
         for vehicle_id, vehicle in self.env.vehicles.items():

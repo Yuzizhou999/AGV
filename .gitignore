@@ -1,5 +1,6 @@
 .venv
 *.md
 requirements.txt
-models
 .gitignore
+models
+__pycache__

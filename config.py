@@ -20,25 +20,23 @@ UNLOADING_POSITIONS = [30.0, 50.0, 80.0]  # 下料口位置
 UNLOADING_STATION_SLOTS = 2  # 每个下料口的工位数
 
 # ========== 货物配置 ==========
-# 货物到达间隔需要与处理能力匹配
-# 2辆车处理能力约160件/小时，即每22秒一件
-# 设置30-60秒间隔，平均45秒一件，每小时约80件，留有余量让模型学习
-ARRIVAL_INTERVAL_MIN = 30  # 货物最小到达间隔(秒)
-ARRIVAL_INTERVAL_MAX = 60  # 货物最大到达间隔(秒)
-CARGO_TIMEOUT = 180.0  # 货物超时时间(秒)，增加到3分钟
+# 根据project.md要求：货物每隔5-15秒（随机整数）出现在上料口
+ARRIVAL_INTERVAL_MIN = 5  # 货物最小到达间隔(秒)
+ARRIVAL_INTERVAL_MAX = 15  # 货物最大到达间隔(秒)
+CARGO_TIMEOUT = 120.0  # 货物超时时间(秒)，默认120秒（Tm）
 
 # ========== 操作配置 ==========
-LOADING_TIME = 10.0  # 单工位上料耗时(秒)，缩短以提高效率
-UNLOADING_TIME = 10.0  # 单工位下料耗时(秒)
+LOADING_TIME = 15.0  # 单工位上料耗时(秒)，根据project.md要求
+UNLOADING_TIME = 15.0  # 单工位下料耗时(秒)，根据project.md要求
 
 # ========== 仿真配置 ==========
-EPISODE_DURATION = 3600  # 仿真时长1小时，足够产生有意义的训练数据
+EPISODE_DURATION = 8 * 3600  # 仿真时长1小时，足够产生有意义的训练数据
 HIGH_LEVEL_DECISION_INTERVAL = 1.0  # 高层决策时间间隔(秒)
 LOW_LEVEL_CONTROL_INTERVAL = 0.5  # 低层控制时间间隔(秒)，0.5秒保证控制精度
 
 # ========== 奖励参数 ==========
 REWARD_DELIVERY = 10.0  # 完成卸货奖励，增大以鼓励完成任务
-REWARD_WAIT_PENALTY_COEFF = 0.001  # 等待惩罚系数，降低以减少负奖励
+REWARD_WAIT_PENALTY_COEFF = 0  # 等待惩罚系数，降低以减少负奖励
 REWARD_TIMEOUT_PENALTY = -5.0  # 超时惩罚，降低以避免过大的负奖励
 REWARD_SAFETY_VIOLATION = -50.0  # 安全距离违反惩罚
 REWARD_SPEED_CHANGE_PENALTY = -0.01  # 速度变化惩罚系数，降低
