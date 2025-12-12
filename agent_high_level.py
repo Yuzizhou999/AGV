@@ -13,22 +13,28 @@ from config import *
 
 
 class HighLevelNetwork(nn.Module):
-    """高层神经网络 - 联合决策：同时选择车辆和下料口"""
+    """
+    高层神经网络 - 基于固定长度状态向量的决策网络
+    不再使用动态列表，使用基于全图的固定特征
+    """
     
-    def __init__(self, input_dim: int, max_decisions: int = 10, max_vehicle_choices: int = 3, max_unloading_choices: int = 3):
+    def __init__(self, input_dim: int, num_loading_stations: int, num_vehicles: int, num_unloading_stations: int):
         """
         Args:
-            input_dim: 输入维度（全局状态）
-            max_decisions: 最大同时决策数量
-            max_vehicle_choices: 每个决策的车辆候选数
-            max_unloading_choices: 每个决策的下料口候选数
+            input_dim: 输入维度（固定长度的状态向量）
+            num_loading_stations: 上料口数量
+            num_vehicles: 车辆数量
+            num_unloading_stations: 下料口数量
         """
         super(HighLevelNetwork, self).__init__()
-        self.max_decisions = max_decisions
-        self.max_vehicle_choices = max_vehicle_choices
-        self.max_unloading_choices = max_unloading_choices
+        self.num_loading_stations = num_loading_stations
+        self.num_vehicles = num_vehicles
+        self.num_unloading_stations = num_unloading_stations
         
-        # 共享编码器
+        # 总工位数（每个上料口2个工位）
+        self.num_loading_slots = num_loading_stations * 2
+        
+        # 共享编码器 - 处理全局状态
         self.encoder = nn.Sequential(
             nn.Linear(input_dim, HIDDEN_DIM * 2),
             nn.ReLU(),
@@ -37,62 +43,67 @@ class HighLevelNetwork(nn.Module):
             nn.ReLU()
         )
         
-        # 车辆选择分支: [batch, max_decisions, max_vehicle_choices + 1]
-        # +1 for "不操作" 选项
-        self.vehicle_head = nn.Sequential(
+        # 为每个上料工位输出：选择哪个车辆
+        # 输出维度：[num_loading_slots, num_vehicles + 1] (+1 for "不操作")
+        self.vehicle_selection_head = nn.Sequential(
             nn.Linear(HIDDEN_DIM, HIDDEN_DIM),
             nn.ReLU(),
-            nn.Linear(HIDDEN_DIM, max_decisions * (max_vehicle_choices + 1))
+            nn.Linear(HIDDEN_DIM, self.num_loading_slots * (num_vehicles + 1))
         )
         
-        # 下料口选择分支: [batch, max_decisions, max_unloading_choices]
-        self.unloading_head = nn.Sequential(
+        # 为每个上料工位输出：选择哪个下料口
+        # 输出维度：[num_loading_slots, num_unloading_stations * 2] (每个下料口2个工位)
+        self.unloading_selection_head = nn.Sequential(
             nn.Linear(HIDDEN_DIM, HIDDEN_DIM),
             nn.ReLU(),
-            nn.Linear(HIDDEN_DIM, max_decisions * max_unloading_choices)
+            nn.Linear(HIDDEN_DIM, self.num_loading_slots * num_unloading_stations * 2)
         )
     
     def forward(self, x):
         """
         Args:
-            x: [batch, input_dim]
+            x: [batch, input_dim] - 固定长度的状态向量
         Returns:
-            vehicle_q: [batch, max_decisions, max_vehicle_choices + 1]
-            unloading_q: [batch, max_decisions, max_unloading_choices]
+            vehicle_q: [batch, num_loading_slots, num_vehicles + 1] - 每个上料工位选择哪个车辆
+            unloading_q: [batch, num_loading_slots, num_unloading_stations * 2] - 每个上料工位选择哪个下料工位
         """
         features = self.encoder(x)
         
-        vehicle_q = self.vehicle_head(features)
-        vehicle_q = vehicle_q.reshape(-1, self.max_decisions, self.max_vehicle_choices + 1)
+        vehicle_q = self.vehicle_selection_head(features)
+        vehicle_q = vehicle_q.reshape(-1, self.num_loading_slots, self.num_vehicles + 1)
         
-        unloading_q = self.unloading_head(features)
-        unloading_q = unloading_q.reshape(-1, self.max_decisions, self.max_unloading_choices)
+        unloading_q = self.unloading_selection_head(features)
+        unloading_q = unloading_q.reshape(-1, self.num_loading_slots, self.num_unloading_stations * 2)
         
         return vehicle_q, unloading_q
 
 
 class HighLevelAgent:
-    """高层智能体 - 联合决策：同时选择车辆和下料口"""
+    """
+    高层智能体 - 基于固定状态空间的决策
+    使用固定长度的状态向量，避免动态列表的问题
+    """
     
-    def __init__(self, obs_dim: int, max_decisions: int = 10, max_vehicle_choices: int = 3, 
-                 max_unloading_choices: int = 3, device='cpu'):
+    def __init__(self, obs_dim: int, num_loading_stations: int, num_vehicles: int, 
+                 num_unloading_stations: int, device='cpu'):
         """
         Args:
-            obs_dim: 观测维度
-            max_decisions: 最大同时决策数
-            max_vehicle_choices: 每个决策的车辆候选数
-            max_unloading_choices: 每个决策的下料口候选数
+            obs_dim: 观测维度（固定长度）
+            num_loading_stations: 上料口数量
+            num_vehicles: 车辆数量
+            num_unloading_stations: 下料口数量
             device: 计算设备
         """
         self.device = device
         self.obs_dim = obs_dim
-        self.max_decisions = max_decisions
-        self.max_vehicle_choices = max_vehicle_choices
-        self.max_unloading_choices = max_unloading_choices
+        self.num_loading_stations = num_loading_stations
+        self.num_vehicles = num_vehicles
+        self.num_unloading_stations = num_unloading_stations
+        self.num_loading_slots = num_loading_stations * 2  # 每个上料口2个工位
         
         # 神经网络
-        self.q_network = HighLevelNetwork(obs_dim, max_decisions, max_vehicle_choices, max_unloading_choices).to(device)
-        self.target_network = HighLevelNetwork(obs_dim, max_decisions, max_vehicle_choices, max_unloading_choices).to(device)
+        self.q_network = HighLevelNetwork(obs_dim, num_loading_stations, num_vehicles, num_unloading_stations).to(device)
+        self.target_network = HighLevelNetwork(obs_dim, num_loading_stations, num_vehicles, num_unloading_stations).to(device)
         self.target_network.load_state_dict(self.q_network.state_dict())
         
         # 优化器
@@ -104,34 +115,37 @@ class HighLevelAgent:
         # 探索率
         self.epsilon = EPSILON_START
         self.steps = 0
-        self.last_vehicle_actions = None  # 记录车辆选择
-        self.last_unloading_actions = None  # 记录下料口选择
+        self.last_vehicle_actions = None  # [num_loading_slots] 每个上料工位选择的车辆
+        self.last_unloading_actions = None  # [num_loading_slots] 每个上料工位选择的下料工位
     
     def select_action(self, observation: np.ndarray) -> Tuple[List[int], List[int]]:
         """
-        选择动作（ε-贪心策略）- 联合决策：车辆选择 + 下料口选择
+        选择动作（ε-贪心策略）- 为每个上料工位选择车辆和下料工位
+        
+        Args:
+            observation: [obs_dim] 固定长度的状态向量
         
         Returns:
-            vehicle_actions: List[int], 长度为max_decisions，每个元素为0~max_vehicle_choices
-                           0=不操作, 1~max_vehicle_choices=选择对应候选车辆
-            unloading_actions: List[int], 长度为max_decisions，每个元素为0~max_unloading_choices-1
-                             选择对应候选下料口
+            vehicle_actions: List[int], 长度为num_loading_slots
+                           0=不操作, 1~num_vehicles=选择对应车辆ID
+            unloading_actions: List[int], 长度为num_loading_slots
+                             0~(num_unloading_stations*2-1)=选择下料工位的全局索引
         """
         obs_tensor = torch.FloatTensor(observation).unsqueeze(0).to(self.device)
         
         with torch.no_grad():
             vehicle_q, unloading_q = self.q_network(obs_tensor)
-            # vehicle_q: [1, max_decisions, max_vehicle_choices + 1]
-            # unloading_q: [1, max_decisions, max_unloading_choices]
+            # vehicle_q: [1, num_loading_slots, num_vehicles + 1]
+            # unloading_q: [1, num_loading_slots, num_unloading_stations * 2]
         
         vehicle_actions = []
         unloading_actions = []
         
-        for i in range(self.max_decisions):
+        for i in range(self.num_loading_slots):
             if np.random.random() < self.epsilon:
                 # 探索：随机选择
-                vehicle_action = np.random.randint(0, self.max_vehicle_choices + 1)
-                unloading_action = np.random.randint(0, self.max_unloading_choices)
+                vehicle_action = np.random.randint(0, self.num_vehicles + 1)
+                unloading_action = np.random.randint(0, self.num_unloading_stations * 2)
             else:
                 # 利用：选择最大Q值
                 vehicle_action = vehicle_q[0, i, :].argmax().item()
@@ -150,7 +164,7 @@ class HighLevelAgent:
         self.memory.append((state, vehicle_actions, unloading_actions, reward, next_state, done))
     
     def train(self, batch_size: int = BATCH_SIZE):
-        """训练网络 - 联合决策优化"""
+        """训练网络 - 基于固定状态空间的优化"""
         if len(self.memory) < batch_size:
             return None
         
@@ -158,21 +172,21 @@ class HighLevelAgent:
         states, vehicle_actions, unloading_actions, rewards, next_states, dones = zip(*batch)
         
         states = torch.FloatTensor(np.array(states)).to(self.device)
-        vehicle_actions = torch.LongTensor(vehicle_actions).to(self.device)  # [batch, max_decisions]
-        unloading_actions = torch.LongTensor(unloading_actions).to(self.device)  # [batch, max_decisions]
+        vehicle_actions = torch.LongTensor(vehicle_actions).to(self.device)  # [batch, num_loading_slots]
+        unloading_actions = torch.LongTensor(unloading_actions).to(self.device)  # [batch, num_loading_slots]
         rewards = torch.FloatTensor(rewards).to(self.device)
         next_states = torch.FloatTensor(np.array(next_states)).to(self.device)
         dones = torch.FloatTensor(dones).to(self.device)
         
-        # Q学习更新 - 对车辆选择和下料口选择分别计算
+        # Q学习更新
         current_vehicle_q, current_unloading_q = self.q_network(states)
         
         # 收集选择的动作的Q值
-        batch_indices = torch.arange(batch_size).unsqueeze(1).expand(-1, self.max_decisions)
-        decision_indices = torch.arange(self.max_decisions).unsqueeze(0).expand(batch_size, -1)
+        batch_indices = torch.arange(batch_size).unsqueeze(1).expand(-1, self.num_loading_slots)
+        slot_indices = torch.arange(self.num_loading_slots).unsqueeze(0).expand(batch_size, -1)
         
-        selected_vehicle_q = current_vehicle_q[batch_indices, decision_indices, vehicle_actions]
-        selected_unloading_q = current_unloading_q[batch_indices, decision_indices, unloading_actions]
+        selected_vehicle_q = current_vehicle_q[batch_indices, slot_indices, vehicle_actions]
+        selected_unloading_q = current_unloading_q[batch_indices, slot_indices, unloading_actions]
         
         with torch.no_grad():
             next_vehicle_q, next_unloading_q = self.target_network(next_states)
@@ -204,17 +218,19 @@ class HighLevelAgent:
         return loss.item()
 
 class HighLevelController:
-    """高层控制器：基于RL的多工位联合决策"""
+    """
+    高层控制器：基于固定状态空间的决策
+    为每个上料工位直接决策车辆和下料工位
+    """
     
     def __init__(self, agent: HighLevelAgent, env):
         self.agent = agent
         self.env = env
         self.last_actions = None
-        self.decision_context = {}  # 记录决策上下文
     
     def compute_action(self, observation: Dict) -> List[Dict]:
         """
-        基于观测计算高层动作 - 同时为所有工位决策
+        基于观测计算高层动作 - 使用固定状态空间
         
         Args:
             observation: 环境观测
@@ -222,205 +238,168 @@ class HighLevelController:
         Returns:
             List[Dict]: 多个动作的列表（可能为空）
         """
-        # 构建决策上下文：收集所有待决策的工位
-        self.decision_context = self._build_decision_context(observation)
-        
-        if not self.decision_context['decisions']:
-            return []  # 没有需要决策的工位
-        
-        # 提取状态向量
+        # 提取固定长度的状态向量
         state_vector = self._extract_state_vector(observation)
         
-        # 联合决策：同时选择车辆和下料口
+        # 为每个上料工位选择车辆和下料工位
         vehicle_actions, unloading_actions = self.agent.select_action(state_vector)
         
         # 解码动作为具体的任务分配
-        task_assignments = self._decode_actions(vehicle_actions, unloading_actions)
+        task_assignments = self._decode_actions(observation, vehicle_actions, unloading_actions)
         
         return task_assignments
     
-    def _build_decision_context(self, observation: Dict) -> Dict:
-        """
-        构建决策上下文：收集所有待决策的工位
-        强制优先处理超时货物
-        
-        Returns:
-            Dict: {
-                'decisions': List[Dict],  # 每个决策点的信息
-                'num_loading': int,       # 上料决策点数量
-                'num_unloading': int      # 下料决策点数量
-            }
-        """
-        decisions = []
-        timeout_decisions = []  # 超时货物的决策（强制优先）
-        
-        # 1. 收集上料决策点（等待中的货物）
-        waiting_cargos = observation.get('waiting_cargos', [])
-        for cargo_info in waiting_cargos:
-            cargo_id = cargo_info['id']
-            cargo = self.env.cargos.get(cargo_id)
-            if cargo is None:
-                continue
-            
-            # 找到可用的车辆工位
-            available_vehicles = []
-            for vehicle_id, vehicle in self.env.vehicles.items():
-                slot_idx = vehicle.get_empty_slot_idx()
-                if slot_idx is not None and vehicle.slot_operation_end_time[slot_idx] <= 0:
-                    station = self.env.loading_stations[cargo.loading_station]
-                    distance = vehicle.distance_to(station.position)
-                    aligned = vehicle.is_aligned_with(station.position)
-                    available_vehicles.append({
-                        'vehicle_id': vehicle_id,
-                        'slot_idx': slot_idx,
-                        'distance': distance,
-                        'aligned': aligned,
-                        'priority': -distance if aligned else -distance - 100
-                    })
-            
-            # 为该货物收集下料口候选
-            available_unloading = []
-            for station_id in cargo.allowed_unloading_stations:
-                station = self.env.unloading_stations[station_id]
-                available_slot = station.get_available_slot()
-                if available_slot is not None:
-                    # 计算到各下料口的距离（以上料口为参考）
-                    loading_station = self.env.loading_stations[cargo.loading_station]
-                    # 简化：使用上料口到下料口的距离
-                    distance = abs(station.position - loading_station.position)
-                    available_unloading.append({
-                        'station_id': station_id,
-                        'slot_idx': available_slot,
-                        'distance': distance,
-                        'load': len([s for s in station.slots if s is not None])  # 当前负载
-                    })
-            
-            if available_vehicles and available_unloading:
-                # 按优先级排序
-                available_vehicles.sort(key=lambda x: x['priority'], reverse=True)
-                # 下料口按距离和负载综合排序
-                available_unloading.sort(key=lambda x: (x['load'], x['distance']))
-                
-                decision = {
-                    'type': 'loading',
-                    'cargo_id': cargo_id,
-                    'vehicle_candidates': available_vehicles[:3],  # 保留前3个车辆候选
-                    'unloading_candidates': available_unloading[:3],  # 保留前3个下料口候选
-                    'timeout_risk': cargo_info['is_timeout']
-                }
-                
-                # 超时货物强制优先
-                if cargo_info['is_timeout']:
-                    timeout_decisions.append(decision)
-                else:
-                    decisions.append(decision)
-        
-        num_loading = len(timeout_decisions) + len(decisions)
-        num_unloading = 0  # 下料决策已集成到装货决策中
-        
-        # 将超时决策放在最前面，确保优先处理
-        all_decisions = timeout_decisions + decisions
-        
-        return {
-            'decisions': all_decisions,
-            'num_loading': num_loading,
-            'num_unloading': num_unloading,
-            'num_timeout': len(timeout_decisions)  # 记录超时决策数量
-        }
-    
     def _extract_state_vector(self, observation: Dict) -> np.ndarray:
         """
-        从观测中提取状态向量
+        从观测中提取固定长度的状态向量
+        
+        状态向量设计：
+        1. 全局信息 (3个特征)
+        2. 上料口状态 (每个上料口2个工位 * 3个特征 = num_loading_stations * 6)
+        3. 车辆状态 (每辆车 * 5个特征 = num_vehicles * 5)
+        4. 下料口状态 (每个下料口2个工位 * 2个特征 = num_unloading_stations * 4)
         
         Returns:
-            np.ndarray: 状态向量
+            np.ndarray: 固定长度的状态向量
         """
         features = []
         
-        # 全局特征
-        features.append(len(observation.get('waiting_cargos', [])) / 10.0)  # 归一化
-        features.append(observation.get('completed_cargos', 0) / 100.0)
-        features.append(observation.get('timed_out_cargos', 0) / 10.0)
+        # ========== 1. 全局特征 (3个) ==========
+        global_info = observation.get('global_info', {})
+        features.append(global_info.get('current_time', 0.0))  # 归一化时间 [0, 1]
+        features.append(len(observation.get('waiting_cargos', [])) / 10.0)  # 等待货物数
+        features.append(global_info.get('timed_out_cargos', 0) / 10.0)  # 超时货物数
         
-        # 车辆特征
-        for vehicle_obs in observation.get('vehicles', []):
-            features.append(vehicle_obs.get('position', 0.0))
-            features.append(vehicle_obs.get('velocity', 0.0))
-            slots = vehicle_obs.get('slots', [None, None])
-            features.append(1.0 if slots[0] is None else 0.0)
-            features.append(1.0 if slots[1] is None else 0.0)
+        # ========== 2. 上料口状态 (每个工位3个特征：有货否、等待时间、是否超时) ==========
+        waiting_cargos = observation.get('waiting_cargos', [])
+        cargo_info_dict = {c['id']: c for c in waiting_cargos}
         
-        # 上料口占用情况
         for station_obs in observation.get('loading_stations', []):
             slots = station_obs.get('slots', [None, None])
-            features.append(1.0 if slots[0] is None else 0.0)
-            features.append(1.0 if slots[1] is None else 0.0)
+            for slot_cargo_id in slots:
+                if slot_cargo_id is None:
+                    features.extend([0.0, 0.0, 0.0])  # 无货物
+                else:
+                    cargo_info = cargo_info_dict.get(slot_cargo_id, {})
+                    features.append(1.0)  # 有货物
+                    features.append(min(cargo_info.get('wait_time', 0.0) / 120.0, 1.0))  # 等待时间归一化
+                    features.append(1.0 if cargo_info.get('is_timeout', False) else 0.0)  # 是否超时
         
-        # 下料口占用情况
-        for station_obs in observation.get('unloading_stations', []):
-            slots = station_obs.get('slots', [None, None])
-            features.append(1.0 if slots[0] is None else 0.0)
-            features.append(1.0 if slots[1] is None else 0.0)
+        # ========== 3. 车辆状态 (每辆车5个特征) ==========
+        for vehicle_obs in observation.get('vehicles', []):
+            features.append(vehicle_obs.get('position', 0.0))  # 位置 [0, 1]
+            features.append(vehicle_obs.get('velocity', 0.0))  # 速度 [-1, 1]
+            slot_occupied = vehicle_obs.get('slot_occupied', [False, False])
+            features.append(1.0 if not slot_occupied[0] else 0.0)  # 工位1是否空闲
+            features.append(1.0 if not slot_occupied[1] else 0.0)  # 工位2是否空闲
+            # 距离最近上料口的距离
+            min_dist = 1.0
+            vehicle_pos = vehicle_obs.get('position', 0.0) * TRACK_LENGTH
+            for station_obs in observation.get('loading_stations', []):
+                station_pos = station_obs.get('position', 0.0) * TRACK_LENGTH
+                dist = abs(vehicle_pos - station_pos) / TRACK_LENGTH
+                min_dist = min(min_dist, dist)
+            features.append(min_dist)
         
-        # 决策点特征（填充到max_decisions）
-        for i, decision in enumerate(self.decision_context.get('decisions', [])):
-            if i >= self.agent.max_decisions:
-                break
-            features.append(1.0)  # 都是装货决策
-            features.append(len(decision.get('vehicle_candidates', [])) / 3.0)
-            features.append(len(decision.get('unloading_candidates', [])) / 3.0)
-            features.append(1.0 if decision.get('timeout_risk', False) else 0.0)
+        # ========== 4. 下料口状态 (每个工位2个特征：占用否、预约否) ==========
+        for station_id, station in self.env.unloading_stations.items():
+            for slot_idx in range(2):
+                features.append(1.0 if station.slots[slot_idx] is None else 0.0)  # 是否空闲
+                features.append(1.0 if station.slot_reserved[slot_idx] else 0.0)  # 是否被预约
         
         # 填充到固定长度
         target_len = self.agent.obs_dim
         while len(features) < target_len:
             features.append(0.0)
         
+        # 截断到固定长度
         return np.array(features[:target_len], dtype=np.float32)
     
-    def _decode_actions(self, vehicle_actions: List[int], unloading_actions: List[int]) -> List[Dict]:
+    def _decode_actions(self, observation: Dict, vehicle_actions: List[int], 
+                       unloading_actions: List[int]) -> List[Dict]:
         """
-        将RL输出的联合动作解码为具体的任务分配
+        将RL输出的动作解码为具体的任务分配
         
         Args:
-            vehicle_actions: 车辆选择动作，0=不操作, 1~n=选择对应候选
-            unloading_actions: 下料口选择动作，0~n-1=选择对应候选
+            observation: 环境观测
+            vehicle_actions: [num_loading_slots] 每个上料工位选择的车辆，0=不操作, 1~num_vehicles=车辆ID
+            unloading_actions: [num_loading_slots] 每个上料工位选择的下料工位全局索引
         
         Returns:
-            List[Dict]: 任务分配列表（包含装货和卸货目标）
+            List[Dict]: 任务分配列表
         """
         assignments = []
         
-        for i, decision in enumerate(self.decision_context['decisions']):
-            if i >= len(vehicle_actions):
-                break
-            
-            vehicle_action = vehicle_actions[i]
-            unloading_action = unloading_actions[i]
-            
-            # vehicle_action=0 表示不操作
-            if vehicle_action == 0:
-                continue
-            
-            # 获取车辆候选（action - 1 转换为索引）
-            vehicle_idx = min(vehicle_action - 1, len(decision['vehicle_candidates']) - 1)
-            if vehicle_idx < 0:
-                continue
+        # 遍历每个上料工位
+        slot_idx = 0
+        for station_id, station in self.env.loading_stations.items():
+            for cargo_slot_idx in range(2):  # 每个上料口2个工位
+                # 检查该工位是否有货物
+                cargo_id = station.slots[cargo_slot_idx]
+                if cargo_id is None:
+                    slot_idx += 1
+                    continue
                 
-            vehicle_candidate = decision['vehicle_candidates'][vehicle_idx]
-            
-            # 获取下料口候选
-            unloading_idx = min(unloading_action, len(decision['unloading_candidates']) - 1)
-            unloading_candidate = decision['unloading_candidates'][unloading_idx]
-            
-            # 生成联合决策：同时包含装货和卸货目标
-            assignments.append({
-                'type': 'assign_loading_with_target',
-                'cargo_id': decision['cargo_id'],
-                'vehicle_id': vehicle_candidate['vehicle_id'],
-                'vehicle_slot_idx': vehicle_candidate['slot_idx'],
-                'unloading_station_id': unloading_candidate['station_id'],
-                'unloading_slot_idx': unloading_candidate['slot_idx']
-            })
+                # 获取对应的动作
+                vehicle_action = vehicle_actions[slot_idx]
+                unloading_action = unloading_actions[slot_idx]
+                slot_idx += 1
+                
+                # vehicle_action=0 表示不操作
+                if vehicle_action == 0:
+                    continue
+                
+                # 车辆ID (action - 1)
+                vehicle_id = vehicle_action - 1
+                if vehicle_id < 0 or vehicle_id >= self.agent.num_vehicles:
+                    continue
+                
+                # 检查车辆是否可用
+                vehicle = self.env.vehicles.get(vehicle_id)
+                if vehicle is None:
+                    continue
+                
+                # 找到车辆的空工位
+                vehicle_slot_idx = vehicle.get_empty_slot_idx()
+                if vehicle_slot_idx is None:
+                    continue
+                
+                # 不再检查对齐，让规则控制去处理
+                # 车辆会自动向目标移动，到达后再执行取货
+                
+                # 检查工位是否正在操作
+                if vehicle.slot_operation_end_time[vehicle_slot_idx] > 0:
+                    continue
+                
+                # 解码下料工位
+                # unloading_action 是全局索引：station_id * 2 + slot_idx
+                unloading_station_id = unloading_action // 2
+                unloading_slot_idx = unloading_action % 2
+                
+                if unloading_station_id >= self.agent.num_unloading_stations:
+                    continue
+                
+                # 检查货物是否允许去该下料口
+                cargo = self.env.cargos.get(cargo_id)
+                if cargo is None or unloading_station_id not in cargo.allowed_unloading_stations:
+                    continue
+                
+                # 检查下料工位是否可用
+                unloading_station = self.env.unloading_stations.get(unloading_station_id)
+                if unloading_station is None:
+                    continue
+                
+                if unloading_station.slot_reserved[unloading_slot_idx]:
+                    continue
+                
+                # 生成任务分配
+                assignments.append({
+                    'type': 'assign_loading_with_target',
+                    'cargo_id': cargo_id,
+                    'vehicle_id': vehicle_id,
+                    'vehicle_slot_idx': vehicle_slot_idx,
+                    'unloading_station_id': unloading_station_id,
+                    'unloading_slot_idx': unloading_slot_idx
+                })
         
         return assignments

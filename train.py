@@ -12,7 +12,6 @@ from datetime import datetime
 from config import *
 from environment import Environment
 from agent_high_level import HighLevelAgent, HighLevelController
-from agent_low_level import LowLevelAgent, LowLevelController
 
 
 class TrainingManager:
@@ -25,26 +24,27 @@ class TrainingManager:
         # 初始化环境
         self.env = Environment(seed=42)
         
-        # 计算观测维度
-        # 高层观测：全局(3) + 车辆(4*n) + 上料口(2*n) + 下料口(2*n) + 决策点(3*max_decisions)
-        # 简化为固定维度
-        high_level_obs_dim = 100  # 预留足够空间
-        max_decisions = NUM_LOADING_STATIONS * 2 + MAX_VEHICLES * 2  # 上料工位数 + 车辆工位数
+        # 计算观测维度 - 使用固定长度的状态向量
+        # 高层观测：
+        # 1. 全局信息: 3个特征
+        # 2. 上料口状态: NUM_LOADING_STATIONS * 2 * 3 = 上料工位数 * 3特征
+        # 3. 车辆状态: MAX_VEHICLES * 5 = 车辆数 * 5特征
+        # 4. 下料口状态: NUM_UNLOADING_STATIONS * 2 * 2 = 下料工位数 * 2特征
+        high_level_obs_dim = 3 + (NUM_LOADING_STATIONS * 2 * 3) + (MAX_VEHICLES * 5) + (NUM_UNLOADING_STATIONS * 2 * 2)
+        # 增加一些缓冲空间
+        high_level_obs_dim += 20
         
-        # 低层观测：位置(1) + 速度(1) + 其他车距离(n-1) + 目标距离(1) + 对齐标志(1) = n + 3
-        low_level_obs_dim = MAX_VEHICLES + 3
-        low_level_action_dim = 3
+        # 初始化高层智能体 - 使用固定状态空间（低层使用规则控制）
+        self.high_level_agent = HighLevelAgent(
+            high_level_obs_dim, 
+            NUM_LOADING_STATIONS, 
+            MAX_VEHICLES, 
+            NUM_UNLOADING_STATIONS, 
+            self.device
+        )
         
-        # 初始化智能体（联合决策：车辆+下料口）
-        max_vehicle_choices = 3  # 每个决策最多3个车辆候选
-        max_unloading_choices = 3  # 每个决策最多3个下料口候选
-        self.high_level_agent = HighLevelAgent(high_level_obs_dim, max_decisions, 
-                                              max_vehicle_choices, max_unloading_choices, self.device)
-        self.low_level_agent = LowLevelAgent(low_level_obs_dim, low_level_action_dim, self.device)
-        
-        # 初始化控制器
+        # 初始化高层控制器
         self.high_level_controller = HighLevelController(self.high_level_agent, self.env)
-        self.low_level_controller = LowLevelController(self.low_level_agent, self.env)
         
         # 统计信息
         self.episode_rewards = []
@@ -55,13 +55,14 @@ class TrainingManager:
     
     def train_episode(self, episode_idx: int) -> Tuple[float, int, int, float]:
         """
-        训练一个episode
+        训练一个episode（使用规则控制车辆，仅训练高层决策）
         
         Returns:
             (total_reward, completed_count, timeout_count, avg_wait_time)
         """
         obs = self.env.reset()
         episode_reward = 0.0
+        step_reward_buffer = 0.0  # 累积步奖励
         step_count = 0
         
         # 高层决策时间管理
@@ -79,22 +80,21 @@ class TrainingManager:
                 # 获取多个高层动作（返回列表）
                 high_level_action_list = self.high_level_controller.compute_action(obs)
                 
-                # 存储转移（如果有上一步）
+                # 存储转移（如果有上一步，使用累积的步奖励）
                 if last_high_level_state is not None and last_high_level_actions is not None:
-                    # last_high_level_actions 现在是 (vehicle_actions, unloading_actions) 元组
                     vehicle_actions, unloading_actions = last_high_level_actions
                     self.high_level_agent.store_transition(
                         last_high_level_state,
                         vehicle_actions,
                         unloading_actions,
-                        episode_reward,  # 简化：使用累计奖励
+                        step_reward_buffer,  # 使用累积的步奖励
                         current_state,
                         False
                     )
+                    step_reward_buffer = 0.0  # 重置缓冲
                 
                 # 更新为下一次存储
                 last_high_level_state = current_state
-                # 获取联合动作
                 vehicle_actions = self.high_level_controller.agent.last_vehicle_actions
                 unloading_actions = self.high_level_controller.agent.last_unloading_actions
                 if vehicle_actions is not None and unloading_actions is not None:
@@ -104,20 +104,18 @@ class TrainingManager:
                 
                 next_high_level_decision = self.env.current_time + HIGH_LEVEL_DECISION_INTERVAL
             
-            # 低层控制（固定时间间隔）
-            low_level_actions = self.low_level_controller.compute_actions()
-            
-            # 执行一步（传递高层动作列表）
-            obs, reward, done = self.env.step(high_level_action_list, low_level_actions)
+            # 执行一步（规则控制车辆，不需要低层动作）
+            obs, reward, done = self.env.step(high_level_action_list, {})
             episode_reward += reward
+            step_reward_buffer += reward  # 累积步奖励
             step_count += 1
             
-            # 训练智能体（每100步训练一次以加速）
+            # 训练高层智能体（每100步训练一次）
             if step_count % 100 == 0:
                 high_loss = self.high_level_agent.train(batch_size=BATCH_SIZE)
-                low_loss = self.low_level_agent.train(batch_size=BATCH_SIZE)
+                # 不再训练低层智能体，因为使用规则控制
             
-            # 打印进度（每个episode内部）
+            # 打印进度
             if step_count % 200 == 0:
                 progress = self.env.current_time / EPISODE_DURATION * 100
                 print(f"    Episode进度: {progress:.1f}% | 步数: {step_count} | 货物: {len(self.env.cargos)} | 完成: {self.env.completed_cargos}", flush=True)
@@ -131,7 +129,7 @@ class TrainingManager:
                         last_high_level_state,
                         vehicle_actions,
                         unloading_actions,
-                        episode_reward,
+                        step_reward_buffer,
                         final_state,
                         True
                     )
@@ -140,7 +138,6 @@ class TrainingManager:
         # 统计
         completed_count = self.env.completed_cargos
         timeout_count = self.env.timed_out_cargos
-        # 只考虑已完成或超时的货物
         total_processed = completed_count + timeout_count
         avg_wait_time = self.env.total_wait_time / max(1, total_processed) if total_processed > 0 else 0.0
         
@@ -220,17 +217,14 @@ class TrainingManager:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
         high_level_model_path = f"models/high_level_agent_{timestamp}.pt"
-        low_level_model_path = f"models/low_level_agent_{timestamp}.pt"
         
         import os
         os.makedirs("models", exist_ok=True)
         
         torch.save(self.high_level_agent.q_network.state_dict(), high_level_model_path)
-        torch.save(self.low_level_agent.q_network.state_dict(), low_level_model_path)
         
         print(f"模型已保存:")
         print(f"  高层智能体: {high_level_model_path}")
-        print(f"  低层智能体: {low_level_model_path}")
         
         # 保存训练统计
         stats = {
