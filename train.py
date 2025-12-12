@@ -31,12 +31,15 @@ class TrainingManager:
         high_level_obs_dim = 100  # 预留足够空间
         max_decisions = NUM_LOADING_STATIONS * 2 + MAX_VEHICLES * 2  # 上料工位数 + 车辆工位数
         
-        # 低层观测：位置(1) + 速度(1) + 其他车距离(n-1) + 目标距离(1) = n + 2
-        low_level_obs_dim = MAX_VEHICLES + 2
+        # 低层观测：位置(1) + 速度(1) + 其他车距离(n-1) + 目标距离(1) + 对齐标志(1) = n + 3
+        low_level_obs_dim = MAX_VEHICLES + 3
         low_level_action_dim = 3
         
-        # 初始化智能体
-        self.high_level_agent = HighLevelAgent(high_level_obs_dim, max_decisions, self.device)
+        # 初始化智能体（联合决策：车辆+下料口）
+        max_vehicle_choices = 3  # 每个决策最多3个车辆候选
+        max_unloading_choices = 3  # 每个决策最多3个下料口候选
+        self.high_level_agent = HighLevelAgent(high_level_obs_dim, max_decisions, 
+                                              max_vehicle_choices, max_unloading_choices, self.device)
         self.low_level_agent = LowLevelAgent(low_level_obs_dim, low_level_action_dim, self.device)
         
         # 初始化控制器
@@ -78,9 +81,12 @@ class TrainingManager:
                 
                 # 存储转移（如果有上一步）
                 if last_high_level_state is not None and last_high_level_actions is not None:
+                    # last_high_level_actions 现在是 (vehicle_actions, unloading_actions) 元组
+                    vehicle_actions, unloading_actions = last_high_level_actions
                     self.high_level_agent.store_transition(
                         last_high_level_state,
-                        last_high_level_actions,
+                        vehicle_actions,
+                        unloading_actions,
                         episode_reward,  # 简化：使用累计奖励
                         current_state,
                         False
@@ -88,17 +94,13 @@ class TrainingManager:
                 
                 # 更新为下一次存储
                 last_high_level_state = current_state
-                last_high_level_actions = self.high_level_controller.agent.last_actions if hasattr(self.high_level_controller.agent, 'last_actions') else None
-                
-                # 从 compute_action 中获取实际使用的动作
-                if hasattr(self.high_level_controller, 'decision_context'):
-                    ctx = self.high_level_controller.decision_context
-                    if ctx and 'decisions' in ctx:
-                        # 构造动作向量（用于存储）
-                        action_indices = [0] * self.high_level_agent.max_decisions
-                        for i in range(min(len(high_level_action_list), self.high_level_agent.max_decisions)):
-                            action_indices[i] = 1 if i < len(high_level_action_list) else 0
-                        last_high_level_actions = action_indices
+                # 获取联合动作
+                vehicle_actions = self.high_level_controller.agent.last_vehicle_actions
+                unloading_actions = self.high_level_controller.agent.last_unloading_actions
+                if vehicle_actions is not None and unloading_actions is not None:
+                    last_high_level_actions = (vehicle_actions, unloading_actions)
+                else:
+                    last_high_level_actions = None
                 
                 next_high_level_decision = self.env.current_time + HIGH_LEVEL_DECISION_INTERVAL
             
@@ -124,9 +126,11 @@ class TrainingManager:
                 # 存储最后一步
                 if last_high_level_state is not None and last_high_level_actions is not None:
                     final_state = self.high_level_controller._extract_state_vector(obs)
+                    vehicle_actions, unloading_actions = last_high_level_actions
                     self.high_level_agent.store_transition(
                         last_high_level_state,
-                        last_high_level_actions,
+                        vehicle_actions,
+                        unloading_actions,
                         episode_reward,
                         final_state,
                         True
@@ -136,7 +140,9 @@ class TrainingManager:
         # 统计
         completed_count = self.env.completed_cargos
         timeout_count = self.env.timed_out_cargos
-        avg_wait_time = self.env.total_wait_time / max(1, self.env.cargo_counter)
+        # 只考虑已完成或超时的货物
+        total_processed = completed_count + timeout_count
+        avg_wait_time = self.env.total_wait_time / max(1, total_processed) if total_processed > 0 else 0.0
         
         return episode_reward, completed_count, timeout_count, avg_wait_time
     

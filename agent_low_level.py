@@ -92,18 +92,18 @@ class LowLevelAgent:
         
         self.optimizer.zero_grad()
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.q_network.parameters(), 1.0)
         self.optimizer.step()
         
         # 更新探索率
         self.epsilon = max(EPSILON_END, self.epsilon * EPSILON_DECAY)
         self.steps += 1
-        
+
         # 定期更新目标网络
-        if self.steps % 10 == 0:
+        if self.steps % 100 == 0:
             self.target_network.load_state_dict(self.q_network.state_dict())
         
         return loss.item()
-
 
 class LowLevelController:
     """下层控制器：执行具体控制"""

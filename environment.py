@@ -58,13 +58,14 @@ class Vehicle:
         return None
     
     def distance_to(self, position: float) -> float:
-        """计算到目标位置的距离(考虑环形轨道)"""
+        """计算到目标位置的距离，只考虑单向行驶"""
         direct = abs(position - self.position)
-        wrap = TRACK_LENGTH - direct
-        return min(direct, wrap)
+        return direct
     
-    def is_aligned_with(self, station_position: float, tolerance: float = 1.0) -> bool:
+    def is_aligned_with(self, station_position: float, tolerance: float = None) -> bool:
         """判断是否与某工位对齐"""
+        if tolerance is None:
+            tolerance = ALIGNMENT_TOLERANCE
         return self.distance_to(station_position) <= tolerance
 
 
@@ -256,6 +257,20 @@ class Environment:
         for vehicle_id, action in actions.items():
             vehicle = self.vehicles[vehicle_id]
             
+            # 检查是否需要停靠（正在进行装卸货操作）
+            is_loading_or_unloading = any(t > 0 for t in vehicle.slot_operation_end_time)
+            
+            # 如果正在操作，强制停车
+            if is_loading_or_unloading:
+                vehicle.velocity = 0.0
+                # 更新工位操作时间
+                for i in range(2):
+                    if vehicle.slot_operation_end_time[i] > 0:
+                        vehicle.slot_operation_end_time[i] -= LOW_LEVEL_CONTROL_INTERVAL
+                        if vehicle.slot_operation_end_time[i] < 0:
+                            vehicle.slot_operation_end_time[i] = 0
+                continue
+            
             # action: 0=减速, 1=保持, 2=加速
             if action == 0:
                 new_velocity = max(-MAX_SPEED, vehicle.velocity - MAX_ACCELERATION * LOW_LEVEL_CONTROL_INTERVAL)
@@ -265,26 +280,14 @@ class Environment:
                 new_velocity = min(MAX_SPEED, vehicle.velocity + MAX_ACCELERATION * LOW_LEVEL_CONTROL_INTERVAL)
             
             # 检查安全距离约束
-            # 根据与前车距离，计算安全速度
             if not self._check_safety_distance(vehicle_id, new_velocity):
-                # 使用当前速度减速，而不是硬停
-                new_velocity = max(-MAX_SPEED, vehicle.velocity - MAX_ACCELERATION * LOW_LEVEL_CONTROL_INTERVAL)
-                # 如果还是不安全，继续循环检查直到找到安全速度
-                while not self._check_safety_distance(vehicle_id, new_velocity) and new_velocity > -MAX_SPEED:
-                    new_velocity -= MAX_ACCELERATION * LOW_LEVEL_CONTROL_INTERVAL
+                new_velocity = 0.0  # 强制停止
             
             vehicle.velocity = new_velocity
             
             # 更新位置
             displacement = vehicle.velocity * LOW_LEVEL_CONTROL_INTERVAL
             vehicle.position = self._normalize_position(vehicle.position + displacement)
-            
-            # 更新工位操作时间
-            for i in range(2):
-                if vehicle.slot_operation_end_time[i] > 0:
-                    vehicle.slot_operation_end_time[i] -= LOW_LEVEL_CONTROL_INTERVAL
-                    if vehicle.slot_operation_end_time[i] < 0:
-                        vehicle.slot_operation_end_time[i] = 0
     
     def _check_safety_distance(self, vehicle_id: int, new_velocity: float) -> bool:
         """检查是否满足安全距离约束"""
@@ -307,51 +310,39 @@ class Environment:
         return True
     
     def _execute_high_level_actions(self, actions: List[Dict]):
-        """执行高层动作列表：批量处理任务分配和流向决策"""
+        """执行高层动作列表：处理联合决策（装货+卸货目标）"""
         if not actions:
             return
         
-        # 按类型分组处理：先处理下料决策，再处理上料任务
-        loading_actions = []
-        unloading_actions = []
-        
+        # 处理联合决策：装货任务同时包含卸货目标
         for action in actions:
-            if action.get('type') == 'assign_loading':
-                loading_actions.append(action)
-            elif action.get('type') == 'assign_unloading':
-                unloading_actions.append(action)
-        
-        # 先处理下料目标分配（为上料后的货物规划目标）
-        for action in unloading_actions:
-            cargo_id = action.get('cargo_id')
-            unloading_station_id = action.get('unloading_station_id')
-            slot_idx = action.get('slot_idx')
-
-            if cargo_id in self.cargos:
-                cargo = self.cargos[cargo_id]
-                station = self.unloading_stations.get(unloading_station_id)
-                if (station and unloading_station_id in cargo.allowed_unloading_stations and
-                        station.has_empty_slot() and not station.slot_reserved[slot_idx] and
-                        cargo.target_unloading_station is None):  # 确保未分配
-                    cargo.target_unloading_station = unloading_station_id
-                    cargo.target_slot = slot_idx
-                    station.slot_reserved[slot_idx] = True
-        
-        # 再处理上料任务分配
-        for action in loading_actions:
+            if action.get('type') != 'assign_loading_with_target':
+                continue  # 只处理联合决策
+            
             cargo_id = action.get('cargo_id')
             vehicle_id = action.get('vehicle_id')
-            slot_idx = action.get('slot_idx')
+            vehicle_slot_idx = action.get('vehicle_slot_idx')
+            unloading_station_id = action.get('unloading_station_id')
+            unloading_slot_idx = action.get('unloading_slot_idx')
 
             if (cargo_id in self.cargos and vehicle_id in self.vehicles and
-                self.vehicles[vehicle_id].slots[slot_idx] is None and
-                self.vehicles[vehicle_id].slot_operation_end_time[slot_idx] == 0.0):
+                self.vehicles[vehicle_id].slots[vehicle_slot_idx] is None and
+                self.vehicles[vehicle_id].slot_operation_end_time[vehicle_slot_idx] == 0.0):
                 cargo = self.cargos[cargo_id]
                 loading_station = self.loading_stations.get(cargo.loading_station)
 
                 if (loading_station and loading_station.slots[cargo.loading_slot] == cargo_id and
                         self.vehicles[vehicle_id].is_aligned_with(loading_station.position)):
-                    self._assign_loading_task(cargo_id, vehicle_id, slot_idx)
+                    # 先分配卸货目标（RL决策）
+                    if unloading_station_id in cargo.allowed_unloading_stations:
+                        unloading_station = self.unloading_stations[unloading_station_id]
+                        if not unloading_station.slot_reserved[unloading_slot_idx]:
+                            cargo.target_unloading_station = unloading_station_id
+                            cargo.target_slot = unloading_slot_idx
+                            unloading_station.slot_reserved[unloading_slot_idx] = True
+                    
+                    # 然后执行装货
+                    self._assign_loading_task(cargo_id, vehicle_id, vehicle_slot_idx)
     
     def _assign_loading_task(self, cargo_id: int, vehicle_id: int, slot_idx: int):
         """分配上料任务"""
@@ -413,26 +404,32 @@ class Environment:
                 if not vehicle.is_aligned_with(unloading_station.position):
                     continue
 
-                # 如果尚未开始操作则启动卸货计时（单工位情况）
-                if vehicle.slot_operation_end_time[slot_idx] == 0 and not both_slots_ready:
-                    vehicle.slot_operation_end_time[slot_idx] = UNLOADING_TIME
-                    unloading_station.slot_reserved[cargo.target_slot] = True
+                # 检查操作状态
+                current_op_time = vehicle.slot_operation_end_time[slot_idx]
+                
+                if current_op_time > 0.1:  # 仍在操作中（使用0.1避免浮点误差）
                     continue
+                elif current_op_time > -0.1:  # 大约等于0，说明刚对齐或刚完成
+                    # 使用一个标记来判断：如果reserved已经是True，说明已经启动过了
+                    # 如果reserved是False，说明还没启动
+                    if not unloading_station.slot_reserved[cargo.target_slot]:
+                        # 还未启动，现在启动
+                        if both_slots_ready and slot_idx in [s['slot_idx'] for s in both_slots_ready.get('slots', [])]:
+                            continue  # 已经在双工位逻辑中处理
+                        vehicle.slot_operation_end_time[slot_idx] = UNLOADING_TIME
+                        unloading_station.slot_reserved[cargo.target_slot] = True
+                        continue
+                    else:
+                        # 已经启动过且时间到0了，执行卸货
+                        vehicle.slots[slot_idx] = None
+                        unloading_station.slots[cargo.target_slot] = cargo_id
+                        unloading_station.slot_reserved[cargo.target_slot] = False
+                        cargo.current_location = f"OP_{cargo.target_unloading_station}_{cargo.target_slot}"
+                        cargo.completion_time = self.current_time
+                        self.total_wait_time += cargo.wait_time(self.current_time)
 
-                # 检查操作是否完成
-                if vehicle.slot_operation_end_time[slot_idx] > 0:
-                    continue
-
-                # 执行卸货
-                vehicle.slots[slot_idx] = None
-                unloading_station.slots[cargo.target_slot] = cargo_id
-                unloading_station.slot_reserved[cargo.target_slot] = False
-                cargo.current_location = f"OP_{cargo.target_unloading_station}_{cargo.target_slot}"
-                cargo.completion_time = self.current_time
-                self.total_wait_time += cargo.wait_time(self.current_time)
-
-                completed_ids.append(cargo_id)
-                self.completed_cargos += 1
+                        completed_ids.append(cargo_id)
+                        self.completed_cargos += 1
 
         return completed_ids
     
@@ -609,7 +606,7 @@ class Environment:
         return np.array(obs_list, dtype=np.float32)
     
     def get_low_level_observation(self, vehicle_id: int) -> np.ndarray:
-        """获取特定车辆的低层观测"""
+        """获取特定车辆的低层观测（增强版：包含目标位置信息）"""
         vehicle = self.vehicles[vehicle_id]
         obs_list = [
             vehicle.position / TRACK_LENGTH,
@@ -626,8 +623,11 @@ class Environment:
                 distance = TRACK_LENGTH - vehicle.position + other_vehicle.position
             obs_list.append(distance / TRACK_LENGTH)
         
-        # 目标点距离
+        # 目标点距离（优化：包含更多上下文）
         target_found = False
+        is_aligned = 0.0
+        
+        # 检查是否有卸货目标
         for cargo_id in vehicle.slots:
             if cargo_id is not None:
                 cargo = self.cargos[cargo_id]
@@ -635,10 +635,15 @@ class Environment:
                     target_pos = self.unloading_stations[cargo.target_unloading_station].position
                     target_distance = vehicle.distance_to(target_pos)
                     obs_list.append(target_distance / TRACK_LENGTH)
+                    # 添加对齐标志
+                    is_aligned = 1.0 if vehicle.is_aligned_with(target_pos) else 0.0
                     target_found = True
                     break
         
         if not target_found:
             obs_list.append(0.0)
+        
+        # 添加对齐信号（帮助低层控制器学习停靠）
+        obs_list.append(is_aligned)
         
         return np.array(obs_list, dtype=np.float32)
