@@ -224,6 +224,9 @@ class AGVVisualizer:
                     cargo_x = x + offset * np.cos(angle + np.pi/2)
                     cargo_y = y + offset * np.sin(angle + np.pi/2)
                     
+                    # 获取货物信息
+                    cargo = self.env.cargos.get(cargo_id)
+                    
                     # Cargo marker (small square)
                     cargo_rect = patches.Rectangle(
                         (cargo_x - 0.2, cargo_y - 0.2), 0.4, 0.4,
@@ -232,6 +235,17 @@ class AGVVisualizer:
                     )
                     self.ax_track.add_patch(cargo_rect)
                     self.cargo_patches.append(cargo_rect)
+                    
+                    # 添加货物目的地标签
+                    if cargo:
+                        allowed = ','.join([str(s) for s in cargo.allowed_unloading_stations])
+                        label_text = self.ax_track.text(
+                            cargo_x, cargo_y - 0.5, f"→{allowed}",
+                            ha='center', va='top', fontsize=7,
+                            color='darkblue', fontweight='bold',
+                            zorder=9
+                        )
+                        self.vehicle_texts.append(label_text)
         
         # Cargo at unloading stations
         for station_id, station in self.env.unloading_stations.items():
@@ -284,7 +298,15 @@ class AGVVisualizer:
                 if cargo_id is not None:
                     cargo = self.env.cargos.get(cargo_id)
                     if cargo:
-                        slot_info.append(f"Slot{i+1}: Cargo{cargo_id}")
+                        # 添加货物目的地信息
+                        dest_info = ""
+                        if cargo.target_unloading_station is not None:
+                            dest_info = f"->OP{cargo.target_unloading_station}"
+                        else:
+                            # 显示允许的目的地
+                            allowed = ','.join([f"OP{s}" for s in cargo.allowed_unloading_stations])
+                            dest_info = f"->({allowed})"
+                        slot_info.append(f"Slot{i+1}: C{cargo_id}{dest_info}")
                 else:
                     slot_info.append(f"Slot{i+1}: Empty")
             info_text += f"    Slots: {' | '.join(slot_info)}\n"
@@ -304,8 +326,11 @@ class AGVVisualizer:
                     cargo = self.env.cargos.get(cargo_id)
                     if cargo:
                         wait_time = cargo.wait_time(self.env.current_time)
-                        timeout_marker = "WARNING" if cargo.is_timeout(self.env.current_time) else ""
-                        info_text += f"    Slot{slot_idx+1}: Cargo{cargo_id} (Wait{wait_time:.1f}s) {timeout_marker}\n"
+                        timeout_marker = "⚠️" if cargo.is_timeout(self.env.current_time) else ""
+                        # 显示货物目的地
+                        allowed = ','.join([f"OP{s}" for s in cargo.allowed_unloading_stations])
+                        assigned = f"V{cargo.assigned_vehicle}" if cargo.assigned_vehicle is not None else "Unassigned"
+                        info_text += f"    Slot{slot_idx+1}: C{cargo_id} ->({allowed}) | {assigned} (Wait{wait_time:.1f}s) {timeout_marker}\n"
                 else:
                     info_text += f"    Slot{slot_idx+1}: Empty\n"
         info_text += "\n"
@@ -327,11 +352,11 @@ class AGVVisualizer:
             info_text += "Recently Completed Cargos:\n"
             recent_completed = self.env.completed_cargo_list[-5:]  # Last 5
             for cargo_info in recent_completed:
-                info_text += f"  Cargo{cargo_info['id']}: "
-                info_text += f"Load{cargo_info['loading_station']}->"
-                info_text += f"Unload{cargo_info['unloading_station']} "
+                info_text += f"  C{cargo_info['id']}: "
+                info_text += f"IP{cargo_info['loading_station']}->"
+                info_text += f"OP{cargo_info['unloading_station']} "
                 info_text += f"(Wait: {cargo_info['wait_time']:.1f}s, "
-                info_text += f"Vehicle: {cargo_info['vehicle_id']})\n"
+                info_text += f"V{cargo_info['vehicle_id']})\n"
         
         # Display text
         self.ax_info.text(0.05, 0.95, info_text,

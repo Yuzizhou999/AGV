@@ -35,11 +35,12 @@ HIGH_LEVEL_DECISION_INTERVAL = 1.0  # 高层决策时间间隔(秒)
 LOW_LEVEL_CONTROL_INTERVAL = 0.5  # 低层控制时间间隔(秒)，0.5秒保证控制精度
 
 # ========== 奖励参数 ==========
-REWARD_DELIVERY = 10.0  # 完成卸货奖励，增大以鼓励完成任务
-REWARD_PICKUP = 5.0  # 完成取货奖励，鼓励及时取货
+REWARD_DELIVERY = 20.0  # 完成卸货奖励，增大以鼓励完成任务
+REWARD_PICKUP = 20.0  # 完成取货奖励，鼓励及时取货
+REWARD_ASSIGNMENT = 20.0  # 分配货物给小车的奖励，鼓励及时做出分配决策
 REWARD_WAIT_PENALTY_COEFF = 0  # 等待惩罚系数，降低以减少负奖励
 REWARD_TIMEOUT_PENALTY = -5.0  # 超时惩罚，降低以避免过大的负奖励
-REWARD_HOLDING_PENALTY_COEFF = 0.002  # 持有货物惩罚系数，鼓励快速卸货
+REWARD_HOLDING_PENALTY_COEFF = 0  # 持有货物惩罚系数，鼓励快速卸货
 REWARD_SAFETY_VIOLATION = -50.0  # 安全距离违反惩罚
 REWARD_SPEED_CHANGE_PENALTY = -0.01  # 速度变化惩罚系数，降低
 

@@ -263,8 +263,8 @@ class Environment:
         # 执行低层控制（更新车辆位置和速度）
         self._execute_low_level_control(low_level_actions)
         
-        # 执行高层任务分配
-        self._execute_high_level_action(high_level_action)
+        # 执行高层任务分配，获取分配事件
+        assigned_ids = self._execute_high_level_action(high_level_action)
         
         # 处理上料和下料操作（需要在位置更新后执行）
         picked_up_ids = self._process_loading_operations()
@@ -274,7 +274,7 @@ class Environment:
         completed_ids = self._check_completions()
         
         # 计算奖励
-        reward = self._calculate_reward(completed_ids, picked_up_ids)
+        reward = self._calculate_reward(completed_ids, picked_up_ids, assigned_ids)
         
         # 检查超时货物
         self._check_timeouts()
@@ -343,10 +343,16 @@ class Environment:
         
         return True
     
-    def _execute_high_level_action(self, action: Dict):
-        """执行高层动作：任务分配和流向决策"""
+    def _execute_high_level_action(self, action: Dict) -> List[int]:
+        """执行高层动作：任务分配和流向决策
+        
+        Returns:
+            List[int]: 本次新分配的货物ID列表
+        """
+        assigned_ids = []
+        
         if action is None:
-            return
+            return assigned_ids
         
         action_type = action.get('type')
         
@@ -358,6 +364,10 @@ class Environment:
             
             if (cargo_id in self.cargos and vehicle_id in self.vehicles and 
                 self.vehicles[vehicle_id].slots[slot_idx] is None):
+                cargo = self.cargos[cargo_id]
+                # 只有首次分配才记录（避免重复分配奖励）
+                if cargo.assigned_vehicle is None:
+                    assigned_ids.append(cargo_id)
                 self._assign_loading_task(cargo_id, vehicle_id, slot_idx)
         
         elif action_type == 'assign_unloading':
@@ -372,6 +382,8 @@ class Environment:
                     self.unloading_stations[unloading_station_id].has_empty_slot()):
                     cargo.target_unloading_station = unloading_station_id
                     cargo.target_slot = slot_idx
+        
+        return assigned_ids
     
     def _assign_loading_task(self, cargo_id: int, vehicle_id: int, slot_idx: int):
         """分配上料任务（只标记任务，实际上料在车辆对齐时执行）"""
@@ -500,12 +512,13 @@ class Environment:
                            and c.is_timeout(self.current_time))
         self.timed_out_cargos = timeout_count  # 直接赋值，不累加
     
-    def _calculate_reward(self, completed_ids: List[int], picked_up_ids: List[int]) -> float:
+    def _calculate_reward(self, completed_ids: List[int], picked_up_ids: List[int], assigned_ids: List[int]) -> float:
         """计算奖励
         
         Args:
             completed_ids: 本次完成卸货的货物ID列表
             picked_up_ids: 本次完成取货的货物ID列表
+            assigned_ids: 本次分配给小车的货物ID列表
         
         Returns:
             float: 奖励值
@@ -517,6 +530,9 @@ class Environment:
         
         # 完成取货奖励
         reward += len(picked_up_ids) * REWARD_PICKUP
+        
+        # 分配货物奖励
+        reward += len(assigned_ids) * REWARD_ASSIGNMENT
         
         # 等待惩罚（针对在上料口等待的货物）
         for cargo in self.cargos.values():
