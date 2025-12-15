@@ -418,36 +418,85 @@ class Environment:
             loading_station = self.loading_stations[cargo.loading_station]
             slot_idx = cargo.assigned_vehicle_slot
             
-            # 检查车辆是否对齐上料口
-            if not vehicle.is_aligned_with(loading_station.position):
-                cargo.loading_start_time = None  # 未对齐则重置开始时间
-                vehicle.is_loading_unloading = False  # 解除锁定
-                continue
-            
             # 检查车辆工位是否仍然空闲
             if vehicle.slots[slot_idx] is not None:
                 continue
             
-            # 开始计时或检查是否完成
+            # 如果还未开始上料，检查是否对齐
             if cargo.loading_start_time is None:
+                # 检查是否对齐上料口
+                if not vehicle.is_aligned_with(loading_station.position):
+                    continue  # 未对齐，等待对齐
+                
+                # 对齐了，开始上料计时
                 cargo.loading_start_time = self.current_time
                 cargo.picked_up_time = self.current_time  # 记录被取走的时间
                 vehicle.is_loading_unloading = True  # 锁定车辆移动
+                vehicle.velocity = 0.0  # 立即停止车辆
+                continue  # 本轮只开始计时，下一轮再检查完成
             
-            # 检查上料是否完成（耗时15秒）
+            # 上料已经在进行中，车辆应该保持锁定状态
+            # 持续检查：上料过程中车辆应该始终对齐并锁定
+            if not vehicle.is_aligned_with(loading_station.position):
+                print(f"[ERROR] 车辆{vehicle.id}上料中失去对齐:")
+                print(f"  车辆位置: {vehicle.position:.2f}")
+                print(f"  上料口位置: {loading_station.position:.2f}")
+                print(f"  货物ID: {cargo.id}")
+                print(f"  上料开始时间: {cargo.loading_start_time:.2f}")
+                print(f"  当前时间: {self.current_time:.2f}")
+                assert False, f"车辆{vehicle.id}上料中失去对齐"
+            
+            if not vehicle.is_loading_unloading:
+                print(f"[ERROR] 车辆{vehicle.id}上料中但未锁定:")
+                print(f"  车辆位置: {vehicle.position:.2f}")
+                print(f"  车辆速度: {vehicle.velocity:.2f}")
+                print(f"  货物ID: {cargo.id}")
+                print(f"  上料开始时间: {cargo.loading_start_time:.2f}")
+                print(f"  当前时间: {self.current_time:.2f}")
+                print(f"  上料进行时间: {self.current_time - cargo.loading_start_time:.2f}s")
+                print(f"  车辆工位: slot0={vehicle.slots[0]}, slot1={vehicle.slots[1]}")
+                assert False, f"车辆{vehicle.id}上料中但未锁定"
+            
+            # 检查是否完成（耗时15秒）
             if self.current_time - cargo.loading_start_time >= LOADING_TIME:
                 # 执行上料：从上料口移除货物，放到车上
                 loading_station.slots[cargo.loading_slot] = None
                 vehicle.slots[slot_idx] = cargo.id
                 cargo.current_location = f"vehicle_{cargo.assigned_vehicle}_{slot_idx}"
                 cargo.loading_start_time = None
-                vehicle.is_loading_unloading = False  # 上料完成，解除锁定
+                # 注意：不在这里解除锁定，统一在函数最后处理
                 picked_up_ids.append(cargo.id)  # 记录完成取货的货物
+        
+        # 统一检查所有车辆：如果没有任何货物正在上料或下料，则解除锁定
+        for vehicle in self.vehicles.values():
+            if vehicle.is_loading_unloading:
+                # 检查是否还有货物正在上料
+                has_loading = False
+                for cargo in self.cargos.values():
+                    if (cargo.assigned_vehicle == vehicle.id and 
+                        cargo.loading_start_time is not None):
+                        has_loading = True
+                        break
+                
+                # 检查是否还有货物正在下料
+                has_unloading = False
+                for slot_cargo_id in vehicle.slots:
+                    if slot_cargo_id is not None and slot_cargo_id in self.cargos:
+                        cargo = self.cargos[slot_cargo_id]
+                        if cargo.unloading_start_time is not None:
+                            has_unloading = True
+                            break
+                
+                # 如果既没有上料也没有下料，解除锁定
+                if not has_loading and not has_unloading:
+                    vehicle.is_loading_unloading = False
         
         return picked_up_ids
     
     def _process_unloading_operations(self):
         """处理下料操作：检查车辆是否对齐下料口，执行下料"""
+        completed_cargo_ids = []  # 记录本轮完成的货物ID（因为会被删除）
+        
         for vehicle_id, vehicle in self.vehicles.items():
             for slot_idx, cargo_id in enumerate(vehicle.slots):
                 if cargo_id is None:
@@ -461,18 +510,41 @@ class Environment:
                 
                 unloading_station = self.unloading_stations[cargo.target_unloading_station]
                 
-                # 检查是否对齐下料口
-                if not vehicle.is_aligned_with(unloading_station.position):
-                    cargo.unloading_start_time = None  # 未对齐则重置开始时间
-                    vehicle.is_loading_unloading = False  # 解除锁定
-                    continue
-                
-                # 开始计时或检查是否完成
+                # 如果还未开始下料，检查是否对齐
                 if cargo.unloading_start_time is None:
+                    # 检查是否对齐下料口
+                    if not vehicle.is_aligned_with(unloading_station.position):
+                        continue  # 未对齐，等待对齐
+                    
+                    # 对齐了，开始下料计时
                     cargo.unloading_start_time = self.current_time
                     vehicle.is_loading_unloading = True  # 锁定车辆移动
+                    vehicle.velocity = 0.0  # 立即停止车辆
+                    continue  # 本轮只开始计时，下一轮再检查完成
                 
-                # 检查下料是否完成（耗时15秒）
+                # 下料已经在进行中，车辆应该保持锁定状态
+                # 持续检查：下料过程中车辆应该始终对齐并锁定
+                if not vehicle.is_aligned_with(unloading_station.position):
+                    print(f"[ERROR] 车辆{vehicle.id}下料中失去对齐:")
+                    print(f"  车辆位置: {vehicle.position:.2f}")
+                    print(f"  下料口位置: {unloading_station.position:.2f}")
+                    print(f"  货物ID: {cargo.id}")
+                    print(f"  下料开始时间: {cargo.unloading_start_time:.2f}")
+                    print(f"  当前时间: {self.current_time:.2f}")
+                    assert False, f"车辆{vehicle.id}下料中失去对齐"
+                
+                if not vehicle.is_loading_unloading:
+                    print(f"[ERROR] 车辆{vehicle.id}下料中但未锁定:")
+                    print(f"  车辆位置: {vehicle.position:.2f}")
+                    print(f"  车辆速度: {vehicle.velocity:.2f}")
+                    print(f"  货物ID: {cargo.id}")
+                    print(f"  下料开始时间: {cargo.unloading_start_time:.2f}")
+                    print(f"  当前时间: {self.current_time:.2f}")
+                    print(f"  下料进行时间: {self.current_time - cargo.unloading_start_time:.2f}s")
+                    print(f"  车辆工位: slot0={vehicle.slots[0]}, slot1={vehicle.slots[1]}")
+                    assert False, f"车辆{vehicle.id}下料中但未锁定"
+                
+                # 检查是否完成（耗时15秒）
                 if self.current_time - cargo.unloading_start_time >= UNLOADING_TIME:
                     # 执行下料：从车上移除货物，货物直接完成任务（不占用下料口slot）
                     vehicle.slots[slot_idx] = None
@@ -496,10 +568,37 @@ class Environment:
                     # 下料口的slot保持空闲，不放置货物
                     # unloading_station.slots[cargo.target_slot] 保持为 None
                     
-                    vehicle.is_loading_unloading = False  # 下料完成，解除锁定
-                    
-                    # 从系统中移除该货物（已完成任务）
-                    del self.cargos[cargo_id]
+                    # 注意：不在这里解除锁定，统一在函数最后处理
+                    # 记录已完成的货物ID
+                    completed_cargo_ids.append(cargo_id)
+        
+        # 删除已完成的货物（在遍历后删除，避免遍历时修改字典）
+        for cargo_id in completed_cargo_ids:
+            del self.cargos[cargo_id]
+        
+        # 统一检查所有车辆：如果没有任何货物正在下料，则解除锁定
+        for vehicle in self.vehicles.values():
+            if vehicle.is_loading_unloading:
+                # 检查是否还有货物正在下料
+                has_unloading = False
+                for slot_cargo_id in vehicle.slots:
+                    if slot_cargo_id is not None and slot_cargo_id in self.cargos:
+                        cargo = self.cargos[slot_cargo_id]
+                        if cargo.unloading_start_time is not None:
+                            has_unloading = True
+                            break
+                
+                # 还需要检查是否有货物正在上料（因为可能同时存在上料和下料）
+                has_loading = False
+                for cargo in self.cargos.values():
+                    if (cargo.assigned_vehicle == vehicle.id and 
+                        cargo.loading_start_time is not None):
+                        has_loading = True
+                        break
+                
+                # 如果既没有上料也没有下料，解除锁定
+                if not has_unloading and not has_loading:
+                    vehicle.is_loading_unloading = False
 
     def _check_completions(self) -> List[int]:
         """检查是否有货物完成（返回本步完成的货物ID列表）

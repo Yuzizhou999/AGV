@@ -214,9 +214,13 @@ class HeuristicLowLevelController:
         vehicle = self.env.vehicles[vehicle_id]
         plan = self.vehicle_plans[vehicle_id]
         
-        # 如果正在上下料，保持静止
+        # 如果正在上下料，强制保持静止
         if vehicle.is_loading_unloading:
-            return 0 if vehicle.velocity > 0 else 1  # 减速到0
+            # 如果速度不为0，减速
+            if vehicle.velocity > 0:
+                return 0  # 减速到0
+            else:
+                return 1  # 保持静止，不移动
         
         # 无规划时，保持巡航
         if plan is None:

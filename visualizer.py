@@ -311,8 +311,31 @@ class AGVVisualizer:
                     slot_info.append(f"Slot{i+1}: Empty")
             info_text += f"    Slots: {' | '.join(slot_info)}\n"
             
+            # 显示车辆状态和上下料详细信息
             if vehicle.is_loading_unloading:
-                info_text += f"    Status: Loading/Unloading\n"
+                # 检查是上料还是下料
+                loading_info = ""
+                unloading_info = ""
+                
+                # 检查上料状态
+                for cargo in self.env.cargos.values():
+                    if (cargo.assigned_vehicle == vehicle_id and 
+                        cargo.loading_start_time is not None):
+                        remaining_time = LOADING_TIME - (self.env.current_time - cargo.loading_start_time)
+                        loading_info = f" (Loading C{cargo.id}, {remaining_time:.1f}s left)"
+                        break
+                
+                # 检查下料状态
+                for slot_idx, cargo_id in enumerate(vehicle.slots):
+                    if cargo_id is not None:
+                        cargo = self.env.cargos.get(cargo_id)
+                        if cargo and cargo.unloading_start_time is not None:
+                            remaining_time = UNLOADING_TIME - (self.env.current_time - cargo.unloading_start_time)
+                            unloading_info = f" (Unloading C{cargo_id}, {remaining_time:.1f}s left)"
+                            break
+                
+                status_detail = loading_info or unloading_info or " (Waiting)"
+                info_text += f"    Status: Loading/Unloading{status_detail}\n"
             else:
                 info_text += f"    Status: Ready\n"
             info_text += "\n"
