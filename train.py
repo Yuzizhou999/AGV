@@ -100,13 +100,15 @@ class TrainingManager:
         
         # 获取初始观测向量
         high_obs = self.env.get_high_level_observation()
-        low_obs = {v_id: self.env.get_low_level_observation(v_id) for v_id in self.env.vehicles.keys()}
+        # 低层使用启发式控制，不需要观测
+        # low_obs = {v_id: self.env.get_low_level_observation(v_id) for v_id in self.env.vehicles.keys()}
         
         # 存储上一步信息
         prev_high_obs = high_obs
         prev_high_action = 0
-        prev_low_obs = low_obs.copy()
-        prev_low_actions = {v_id: 1 for v_id in self.env.vehicles.keys()}  # 默认保持
+        # 低层使用启发式控制，不需要存储
+        # prev_low_obs = low_obs.copy()
+        # prev_low_actions = {v_id: 1 for v_id in self.env.vehicles.keys()}  # 默认保持
         
         while self.env.current_time < EPISODE_DURATION:
             # 高层决策（事件驱动）
@@ -123,54 +125,55 @@ class TrainingManager:
                 
                 next_high_level_decision = self.env.current_time + HIGH_LEVEL_DECISION_INTERVAL
             
-            # 低层控制（固定时间间隔）
-            low_level_actions = {}
-            for vehicle_id in self.env.vehicles.keys():
-                low_obs[vehicle_id] = self.env.get_low_level_observation(vehicle_id)
-                action = self.low_level_agent.select_action(low_obs[vehicle_id])
-                low_level_actions[vehicle_id] = action
+            # 低层控制（使用启发式控制器替代神经网络）
+            # low_level_actions = {}
+            # for vehicle_id in self.env.vehicles.keys():
+            #     low_obs[vehicle_id] = self.env.get_low_level_observation(vehicle_id)
+            #     action = self.low_level_agent.select_action(low_obs[vehicle_id])
+            #     low_level_actions[vehicle_id] = action
             
-            # 执行一步
-            next_obs, reward, done = self.env.step(high_level_action, low_level_actions)
+            # 执行一步（使用启发式控制器，low_level_actions=None）
+            next_obs, reward, done = self.env.step(high_level_action, low_level_actions=None)
             episode_reward += reward
             step_count += 1
             self.total_steps += 1
             
-            # 获取下一步观测
+            # 获取下一步观测（只需要高层观测）
             next_high_obs = self.env.get_high_level_observation()
-            next_low_obs = {v_id: self.env.get_low_level_observation(v_id) for v_id in self.env.vehicles.keys()}
+            # next_low_obs = {v_id: self.env.get_low_level_observation(v_id) for v_id in self.env.vehicles.keys()}  # 不需要
             
             # 存储高层经验
             self.high_level_agent.store_transition(
                 prev_high_obs, prev_high_action, reward, next_high_obs, done
             )
             
-            # 存储低层经验（每个车辆单独存储）
-            for vehicle_id in self.env.vehicles.keys():
-                self.low_level_agent.store_transition(
-                    prev_low_obs[vehicle_id], 
-                    prev_low_actions[vehicle_id],
-                    reward / len(self.env.vehicles),  # 平均分配奖励
-                    next_low_obs[vehicle_id],
-                    done
-                )
+            # 低层使用启发式控制，不需要训练
+            # （注释掉低层智能体的经验存储）
+            # for vehicle_id in self.env.vehicles.keys():
+            #     self.low_level_agent.store_transition(
+            #         prev_low_obs[vehicle_id], 
+            #         prev_low_actions[vehicle_id],
+            #         reward / len(self.env.vehicles),
+            #         next_low_obs[vehicle_id],
+            #         done
+            #     )
             
             # 更新上一步信息
             prev_high_obs = next_high_obs
             prev_high_action = high_action_idx
-            prev_low_obs = next_low_obs.copy()
-            prev_low_actions = low_level_actions.copy()
+            # prev_low_obs = next_low_obs.copy()  # 不再需要
+            # prev_low_actions = low_level_actions.copy()  # 不再需要
             obs = next_obs
             
-            # 定期训练智能体
+            # 定期训练智能体（只训练高层智能体）
             if len(self.high_level_agent.memory) >= MIN_REPLAY_SIZE and step_count % TRAIN_FREQUENCY == 0:
                 self.high_level_agent.train(batch_size=BATCH_SIZE)
-                self.low_level_agent.train(batch_size=BATCH_SIZE)
+                # self.low_level_agent.train(batch_size=BATCH_SIZE)  # 使用启发式控制，不需要训练
             
-            # 定期更新目标网络
+            # 定期更新目标网络（只更新高层）
             if step_count % TARGET_UPDATE_FREQUENCY == 0:
                 self.high_level_agent.update_target_network()
-                self.low_level_agent.update_target_network()
+                # self.low_level_agent.update_target_network()  # 使用启发式控制，不需要训练
             
             # 更新可视化（如果启用）
             if self.enable_visualization and step_count % self.vis_update_interval == 0:
@@ -193,9 +196,9 @@ class TrainingManager:
                                if c.completion_time is None and c.current_location.startswith("vehicle_"))
         avg_wait_time = self.env.total_wait_time / max(1, self.env.cargo_counter)
         
-        # 在episode结束后衰减探索率
+        # 在episode结束后衰减探索率（只针对高层智能体）
         self.high_level_agent.decay_epsilon()
-        self.low_level_agent.decay_epsilon()
+        # self.low_level_agent.decay_epsilon()  # 使用启发式控制，不需要探索
         
         return episode_reward, completed_count, completed_timeout_count, waiting_timeout_count, avg_wait_time, total_cargos, waiting_cargos, on_vehicle_cargos
     
@@ -216,6 +219,7 @@ class TrainingManager:
         print(f"学习率: {LEARNING_RATE}")
         print(f"批大小: {BATCH_SIZE}")
         print(f"探索率衰减: {EPSILON_START} -> {EPSILON_END} (衰减系数: {EPSILON_DECAY})")
+        print(f"底层控制: 启发式控制器 (不使用神经网络)")
         print("=" * 80)
         print()
         
@@ -320,34 +324,36 @@ class TrainingManager:
         self._save_models(prefix="final")
     
     def _save_models(self, prefix: str = ""):
-        """保存训练好的模型"""
+        """保存训练好的模型（只保存高层智能体）"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
         if prefix:
             high_level_model_path = f"models/{prefix}_high_level_agent.pt"
-            low_level_model_path = f"models/{prefix}_low_level_agent.pt"
+            # low_level_model_path = f"models/{prefix}_low_level_agent.pt"  # 使用启发式控制，不需要保存
             stats_path = f"models/{prefix}_training_stats.json"
         else:
             high_level_model_path = f"models/high_level_agent_{timestamp}.pt"
-            low_level_model_path = f"models/low_level_agent_{timestamp}.pt"
+            # low_level_model_path = f"models/low_level_agent_{timestamp}.pt"  # 使用启发式控制，不需要保存
             stats_path = f"models/training_stats_{timestamp}.json"
         
-        # 保存模型状态字典
+        # 保存模型状态字典（只保存高层）
         torch.save({
             'q_network': self.high_level_agent.q_network.state_dict(),
             'target_network': self.high_level_agent.target_network.state_dict(),
             'epsilon': self.high_level_agent.epsilon,
         }, high_level_model_path)
         
-        torch.save({
-            'q_network': self.low_level_agent.q_network.state_dict(),
-            'target_network': self.low_level_agent.target_network.state_dict(),
-            'epsilon': self.low_level_agent.epsilon,
-        }, low_level_model_path)
+        # 低层使用启发式控制，不需要保存模型
+        # torch.save({
+        #     'q_network': self.low_level_agent.q_network.state_dict(),
+        #     'target_network': self.low_level_agent.target_network.state_dict(),
+        #     'epsilon': self.low_level_agent.epsilon,
+        # }, low_level_model_path)
         
         print(f"模型已保存:")
         print(f"  高层智能体: {high_level_model_path}")
-        print(f"  低层智能体: {low_level_model_path}")
+        # print(f"  低层智能体: {low_level_model_path}")  # 使用启发式控制
+        print(f"  (低层使用启发式控制，无需保存模型)")
         
         # 保存训练统计
         stats = {
@@ -406,7 +412,7 @@ def main():
     manager = TrainingManager(
         num_episodes=NUM_EPISODES, 
         use_gpu=use_gpu,
-        enable_visualization=True,
+        enable_visualization=False,
         vis_update_interval=args.vis_interval
     )
     

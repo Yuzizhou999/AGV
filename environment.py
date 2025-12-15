@@ -242,13 +242,13 @@ class Environment:
         
         return new_cargo_ids
     
-    def step(self, high_level_action: Dict, low_level_actions: Dict) -> Tuple[Dict, float, bool]:
+    def step(self, high_level_action: Dict, low_level_actions: Dict = None) -> Tuple[Dict, float, bool]:
         """
         执行一步模拟
         
         Args:
             high_level_action: 高层动作字典
-            low_level_actions: 低层动作字典 {vehicle_id: action}
+            low_level_actions: 低层动作字典 {vehicle_id: action}，如果为None则使用启发式控制
         
         Returns:
             observation, reward, done
@@ -259,6 +259,13 @@ class Environment:
         
         # 检查是否有新货物到达
         self._check_and_generate_cargo()
+        
+        # 如果没有提供低层动作，使用启发式控制器
+        if low_level_actions is None:
+            from heuristic_controller import HeuristicLowLevelController
+            if not hasattr(self, 'heuristic_controller'):
+                self.heuristic_controller = HeuristicLowLevelController(self)
+            low_level_actions = self.heuristic_controller.get_actions()
         
         # 执行低层控制（更新车辆位置和速度）
         self._execute_low_level_control(low_level_actions)

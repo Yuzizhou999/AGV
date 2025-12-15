@@ -1,0 +1,383 @@
+"""
+启发式底层控制器
+替换神经网络控制，使用基于规则的方法控制小车速度
+"""
+
+import numpy as np
+from typing import Dict, Optional
+from config import *
+
+
+class HeuristicLowLevelController:
+    """启发式底层控制器"""
+    
+    def __init__(self, environment):
+        """
+        初始化控制器
+        
+        Args:
+            environment: 环境实例
+        """
+        self.env = environment
+        # 每辆车的运动规划
+        self.vehicle_plans: Dict[int, Optional[Dict]] = {i: None for i in range(MAX_VEHICLES)}
+        # 运动规划包含：
+        # - target_position: 目标位置
+        # - accel_distance: 加速段距离
+        # - decel_distance: 减速段距离
+        # - cruise_distance: 匀速段距离
+        # - cruise_speed: 巡航速度（可能是最大速度或更低）
+        # - phase: 当前阶段 ('accel', 'cruise', 'decel', 'aligned')
+    
+    def get_actions(self) -> Dict[int, int]:
+        """
+        为所有车辆生成控制动作
+        
+        Returns:
+            Dict[int, int]: {vehicle_id: action} 其中action为0(减速),1(保持),2(加速)
+        """
+        actions = {}
+        
+        for vehicle_id, vehicle in self.env.vehicles.items():
+            # 更新车辆的目标位置
+            self._update_vehicle_target(vehicle_id)
+            
+            # 根据车辆状态决定动作
+            action = self._get_vehicle_action(vehicle_id)
+            actions[vehicle_id] = action
+        
+        return actions
+    
+    def _update_vehicle_target(self, vehicle_id: int):
+        """更新车辆的目标位置和运动规划"""
+        vehicle = self.env.vehicles[vehicle_id]
+        current_plan = self.vehicle_plans[vehicle_id]
+        
+        # 检查车辆是否有任务
+        target_position = None
+        is_loading_task = False
+        
+        # 检查是否有货物需要取货
+        for cargo in self.env.cargos.values():
+            if (cargo.assigned_vehicle == vehicle_id and 
+                cargo.current_location.startswith("IP_")):
+                # 需要去上料口取货
+                loading_station = self.env.loading_stations[cargo.loading_station]
+                target_position = loading_station.position
+                is_loading_task = True
+                break
+        
+        # 检查车上是否有货物需要卸货
+        if target_position is None:
+            for slot_idx, cargo_id in enumerate(vehicle.slots):
+                if cargo_id is not None:
+                    cargo = self.env.cargos[cargo_id]
+                    if cargo.target_unloading_station is not None:
+                        # 需要去下料口卸货
+                        unloading_station = self.env.unloading_stations[cargo.target_unloading_station]
+                        target_position = unloading_station.position
+                        is_loading_task = False
+                        break
+        
+        # 无任务，清除规划
+        if target_position is None:
+            self.vehicle_plans[vehicle_id] = None
+            return
+        
+        # 检查是否需要重新规划
+        need_replan = False
+        
+        # 情况1: 没有规划
+        if current_plan is None:
+            need_replan = True
+        # 情况2: 目标位置改变（优先检查，确保任务切换时立即重新规划）
+        elif current_plan['target_position'] != target_position:
+            need_replan = True
+        # 情况3: 速度为0且不在目标位置（可能因安全距离停止）
+        elif vehicle.velocity == 0.0 and not vehicle.is_aligned_with(target_position) and not vehicle.is_loading_unloading:
+            need_replan = True
+        # 情况4: 已经对齐目标位置
+        elif vehicle.is_aligned_with(target_position):
+            # 如果已对齐，标记为aligned阶段
+            if current_plan['phase'] != 'aligned':
+                current_plan['phase'] = 'aligned'
+            return
+        
+        # 执行重新规划
+        if need_replan:
+            self.vehicle_plans[vehicle_id] = self._plan_motion(vehicle, target_position)
+    
+    def _plan_motion(self, vehicle, target_position: float) -> Dict:
+        """
+        规划从当前位置到目标位置的运动轨迹
+        
+        运动分为三个阶段：
+        1. 加速阶段：从当前速度加速到巡航速度
+        2. 匀速阶段：保持巡航速度
+        3. 减速阶段：从巡航速度减速到0
+        
+        Args:
+            vehicle: 车辆对象
+            target_position: 目标位置
+        
+        Returns:
+            运动规划字典
+        """
+        current_v = vehicle.velocity
+        distance = vehicle.distance_to(target_position)
+        a = MAX_ACCELERATION
+        v_max = MAX_SPEED
+        
+        # 计算从当前速度减速到0所需的距离
+        s_decel_from_current = (current_v ** 2) / (2 * a) if current_v > 0 else 0
+        
+        # 计算从0加速到最大速度所需的距离
+        s_accel_to_max = (v_max ** 2) / (2 * a)
+        
+        # 计算从最大速度减速到0所需的距离
+        s_decel_from_max = s_accel_to_max  # 对称
+        
+        # 判断是否能达到最大速度
+        # 如果当前速度已经较高，先计算减速到0需要的距离
+        if s_decel_from_current >= distance:
+            # 距离太短，必须立即减速
+            return {
+                'target_position': target_position,
+                'cruise_speed': 0,
+                'accel_distance': 0,
+                'cruise_distance': 0,
+                'decel_distance': distance,
+                'phase': 'decel'
+            }
+        
+        # 计算如果加速到最大速度再减速，总共需要多少距离
+        # s_total = (v_max^2 - v_current^2)/(2a) + v_max^2/(2a)
+        s_accel = (v_max ** 2 - current_v ** 2) / (2 * a)
+        total_accel_decel = s_accel + s_decel_from_max
+        
+        if total_accel_decel <= distance:
+            # 可以达到最大速度
+            cruise_speed = v_max
+            accel_distance = s_accel
+            decel_distance = s_decel_from_max
+            cruise_distance = distance - total_accel_decel
+        else:
+            # 不能达到最大速度，计算最高能达到的速度
+            # s_accel + s_decel = distance
+            # (v_cruise^2 - v_current^2)/(2a) + v_cruise^2/(2a) = distance
+            # (2*v_cruise^2 - v_current^2)/(2a) = distance
+            # v_cruise^2 = a*distance + v_current^2/2
+            cruise_speed_squared = a * distance + (current_v ** 2) / 2
+            if cruise_speed_squared > 0:
+                cruise_speed = min(v_max, np.sqrt(cruise_speed_squared))
+            else:
+                cruise_speed = current_v
+            
+            accel_distance = (cruise_speed ** 2 - current_v ** 2) / (2 * a) if cruise_speed > current_v else 0
+            decel_distance = (cruise_speed ** 2) / (2 * a)
+            cruise_distance = distance - accel_distance - decel_distance
+            
+            # 修正可能的数值误差
+            if cruise_distance < 0:
+                cruise_distance = 0
+                # 重新分配距离
+                accel_distance = distance / 2
+                decel_distance = distance / 2
+        
+        # 确定初始阶段
+        if current_v < cruise_speed - 0.1:
+            phase = 'accel'
+        elif accel_distance <= 0 and cruise_distance <= 0:
+            phase = 'decel'
+        elif cruise_distance > 0:
+            phase = 'cruise'
+        else:
+            phase = 'decel'
+        
+        return {
+            'target_position': target_position,
+            'cruise_speed': cruise_speed,
+            'accel_distance': accel_distance,
+            'cruise_distance': cruise_distance,
+            'decel_distance': decel_distance,
+            'phase': phase,
+            'accel_start_distance': distance,  # 记录规划时的总距离
+        }
+    
+    def _get_vehicle_action(self, vehicle_id: int) -> int:
+        """
+        获取车辆的控制动作
+        
+        Returns:
+            int: 0(减速), 1(保持), 2(加速)
+        """
+        vehicle = self.env.vehicles[vehicle_id]
+        plan = self.vehicle_plans[vehicle_id]
+        
+        # 如果正在上下料，保持静止
+        if vehicle.is_loading_unloading:
+            return 0 if vehicle.velocity > 0 else 1  # 减速到0
+        
+        # 无规划时，保持巡航
+        if plan is None:
+            return self._cruise_action(vehicle_id)
+        
+        # 如果已经对齐目标位置，保持静止
+        if plan['phase'] == 'aligned':
+            if vehicle.velocity > 0:
+                return 0  # 减速到停止
+            else:
+                return 1  # 保持静止
+        
+        # 计算当前到目标的距离
+        current_distance = vehicle.distance_to(plan['target_position'])
+        
+        # 更新阶段
+        self._update_phase(vehicle, plan, current_distance)
+        
+        # 根据阶段决定动作
+        if plan['phase'] == 'accel':
+            # 加速阶段
+            if vehicle.velocity < plan['cruise_speed'] - 0.1:
+                # 检查安全距离
+                if self._will_violate_safety(vehicle_id, 2):
+                    return 1  # 保持
+                return 2  # 加速
+            else:
+                # 达到巡航速度
+                plan['phase'] = 'cruise' if plan['cruise_distance'] > 0 else 'decel'
+                return 1  # 保持
+        
+        elif plan['phase'] == 'cruise':
+            # 匀速阶段
+            if vehicle.velocity < plan['cruise_speed'] - 0.1:
+                if self._will_violate_safety(vehicle_id, 2):
+                    return 1
+                return 2  # 加速到巡航速度
+            elif vehicle.velocity > plan['cruise_speed'] + 0.1:
+                return 0  # 减速到巡航速度
+            else:
+                # 检查是否需要进入减速阶段
+                if current_distance <= plan['decel_distance'] + 1.0:  # 余量
+                    plan['phase'] = 'decel'
+                    return 0  # 开始减速
+                else:
+                    # 检查安全距离
+                    if self._will_violate_safety(vehicle_id, 1):
+                        return 0  # 减速
+                    return 1  # 保持
+        
+        elif plan['phase'] == 'decel':
+            # 减速阶段
+            # 检查是否已经很接近目标
+            if current_distance <= 1.0:  # tolerance
+                if vehicle.velocity > 0.5:
+                    return 0  # 继续减速
+                elif vehicle.is_aligned_with(plan['target_position']):
+                    plan['phase'] = 'aligned'
+                    return 1  # 已对齐，保持
+                else:
+                    return 0 if vehicle.velocity > 0 else 1
+            else:
+                # 还没到目标，继续减速
+                if vehicle.velocity > 0:
+                    return 0  # 减速
+                else:
+                    # 速度已经为0但还没到目标，可能需要重新规划
+                    return 1  # 保持
+        
+        return 1  # 默认保持
+    
+    def _update_phase(self, vehicle, plan: Dict, current_distance: float):
+        """根据当前状态更新运动阶段"""
+        if plan['phase'] == 'aligned':
+            return
+        
+        # 检查是否应该进入减速阶段
+        # 计算从当前速度减速到0需要的距离
+        decel_needed = (vehicle.velocity ** 2) / (2 * MAX_ACCELERATION) if vehicle.velocity > 0 else 0
+        decel_needed += 1.0  # 安全余量
+        
+        if current_distance <= decel_needed:
+            plan['phase'] = 'decel'
+        elif vehicle.velocity >= plan['cruise_speed'] - 0.1:
+            # 已达到或接近巡航速度
+            if plan['cruise_distance'] > 0 and current_distance > decel_needed:
+                plan['phase'] = 'cruise'
+            else:
+                plan['phase'] = 'decel'
+        elif vehicle.velocity < plan['cruise_speed'] - 0.1:
+            # 还未达到巡航速度
+            if current_distance > decel_needed:
+                plan['phase'] = 'accel'
+            else:
+                plan['phase'] = 'decel'
+    
+    def _cruise_action(self, vehicle_id: int) -> int:
+        """
+        巡航模式：保持匀速运行（考虑安全距离）
+        
+        Returns:
+            int: 0(减速), 1(保持), 2(加速)
+        """
+        vehicle = self.env.vehicles[vehicle_id]
+        
+        # 目标速度为最大速度的70%（巡航速度）
+        cruise_speed = MAX_SPEED * 0.7
+        
+        if vehicle.velocity < cruise_speed - 0.1:
+            # 需要加速，但要检查安全距离
+            if self._will_violate_safety(vehicle_id, 2):
+                return 1  # 保持
+            return 2  # 加速
+        elif vehicle.velocity > cruise_speed + 0.1:
+            return 0  # 减速
+        else:
+            # 检查前方是否有车太近
+            if self._will_violate_safety(vehicle_id, 1):
+                return 0  # 减速
+            return 1  # 保持
+    
+    def _will_violate_safety(self, vehicle_id: int, action: int) -> bool:
+        """
+        检查执行某个动作是否会违反安全距离
+        
+        Args:
+            vehicle_id: 车辆ID
+            action: 0(减速), 1(保持), 2(加速)
+        
+        Returns:
+            bool: 是否会违反安全距离
+        """
+        vehicle = self.env.vehicles[vehicle_id]
+        
+        # 计算新速度
+        if action == 0:
+            new_velocity = max(-MAX_SPEED, vehicle.velocity - MAX_ACCELERATION * LOW_LEVEL_CONTROL_INTERVAL)
+        elif action == 1:
+            new_velocity = vehicle.velocity
+        else:  # action == 2
+            new_velocity = min(MAX_SPEED, vehicle.velocity + MAX_ACCELERATION * LOW_LEVEL_CONTROL_INTERVAL)
+        
+        # 计算新位置
+        new_position = (vehicle.position + new_velocity * LOW_LEVEL_CONTROL_INTERVAL) % TRACK_LENGTH
+        
+        # 检查与其他车辆的距离
+        for other_id, other_vehicle in self.env.vehicles.items():
+            if other_id == vehicle_id:
+                continue
+            
+            # 跳过正在上下料的车辆
+            if other_vehicle.is_loading_unloading:
+                continue
+            
+            # 计算距离（沿行驶方向）
+            if new_position < other_vehicle.position:
+                distance = other_vehicle.position - new_position
+            else:
+                distance = TRACK_LENGTH - new_position + other_vehicle.position
+            
+            if distance < SAFETY_DISTANCE:
+                return True
+        
+        return False
