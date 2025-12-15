@@ -194,6 +194,7 @@ class Environment:
         self.completed_cargos = 0
         self.timed_out_cargos = 0
         self.total_wait_time = 0.0
+        self.completed_cargo_list = []  # 保存已完成货物的详细信息
     
     def reset(self):
         """重置环境"""
@@ -266,14 +267,14 @@ class Environment:
         self._execute_high_level_action(high_level_action)
         
         # 处理上料和下料操作（需要在位置更新后执行）
-        self._process_loading_operations()
+        picked_up_ids = self._process_loading_operations()
         self._process_unloading_operations()
         
         # 检查完成情况
         completed_ids = self._check_completions()
         
         # 计算奖励
-        reward = self._calculate_reward(completed_ids)
+        reward = self._calculate_reward(completed_ids, picked_up_ids)
         
         # 检查超时货物
         self._check_timeouts()
@@ -380,7 +381,13 @@ class Environment:
         cargo.assigned_vehicle_slot = slot_idx
     
     def _process_loading_operations(self):
-        """处理上料操作：检查车辆是否对齐上料口，执行上料"""
+        """处理上料操作：检查车辆是否对齐上料口，执行上料
+        
+        Returns:
+            List[int]: 本次完成取货的货物ID列表
+        """
+        picked_up_ids = []
+        
         for cargo in self.cargos.values():
             # 只处理在上料口等待且已分配车辆的货物
             if (cargo.completion_time is not None or 
@@ -416,8 +423,9 @@ class Environment:
                 cargo.current_location = f"vehicle_{cargo.assigned_vehicle}_{slot_idx}"
                 cargo.loading_start_time = None
                 vehicle.is_loading_unloading = False  # 上料完成，解除锁定
-                cargo.current_location = f"vehicle_{cargo.assigned_vehicle}_{slot_idx}"
-                cargo.loading_start_time = None
+                picked_up_ids.append(cargo.id)  # 记录完成取货的货物
+        
+        return picked_up_ids
     
     def _process_unloading_operations(self):
         """处理下料操作：检查车辆是否对齐下料口，执行下料"""
@@ -447,24 +455,41 @@ class Environment:
                 
                 # 检查下料是否完成（耗时15秒）
                 if self.current_time - cargo.unloading_start_time >= UNLOADING_TIME:
-                    # 执行下料：从车上移除货物
+                    # 执行下料：从车上移除货物，货物直接完成任务（不占用下料口slot）
                     vehicle.slots[slot_idx] = None
-                    unloading_station.slots[cargo.target_slot] = cargo_id
-                    cargo.current_location = f"OP_{cargo.target_unloading_station}_{cargo.target_slot}"
+                    cargo.current_location = f"OP_{cargo.target_unloading_station}_{cargo.target_slot}_completed"
                     cargo.completion_time = self.current_time
                     cargo.unloading_start_time = None
                     self.completed_cargos += 1
+                    
+                    # 保存已完成货物的详细信息
+                    completed_info = {
+                        'id': cargo.id,
+                        'arrival_time': cargo.arrival_time,
+                        'completion_time': cargo.completion_time,
+                        'wait_time': cargo.wait_time(self.current_time),
+                        'loading_station': cargo.loading_station,
+                        'unloading_station': cargo.target_unloading_station,
+                        'vehicle_id': cargo.assigned_vehicle
+                    }
+                    self.completed_cargo_list.append(completed_info)
+                    
+                    # 下料口的slot保持空闲，不放置货物
+                    # unloading_station.slots[cargo.target_slot] 保持为 None
+                    
                     vehicle.is_loading_unloading = False  # 下料完成，解除锁定
+                    
+                    # 从系统中移除该货物（已完成任务）
+                    del self.cargos[cargo_id]
 
     def _check_completions(self) -> List[int]:
-        """检查是否有货物完成（返回本步完成的货物ID列表）"""
+        """检查是否有货物完成（返回本步完成的货物ID列表）
+        注意：由于货物在下料完成时就被从self.cargos中删除，这个函数现在主要用于兼容性
+        """
         completed_ids = []
         
-        # 检查在本时间步完成的货物
-        for cargo in self.cargos.values():
-            if (cargo.completion_time is not None and 
-                abs(cargo.completion_time - self.current_time) < LOW_LEVEL_CONTROL_INTERVAL / 2):
-                completed_ids.append(cargo.id)
+        # 由于货物完成后立即从cargos中删除，这里不需要再次检查
+        # 保留这个函数是为了代码兼容性
         
         return completed_ids
     
@@ -475,20 +500,44 @@ class Environment:
                            and c.is_timeout(self.current_time))
         self.timed_out_cargos = timeout_count  # 直接赋值，不累加
     
-    def _calculate_reward(self, completed_ids: List[int]) -> float:
-        """计算奖励"""
+    def _calculate_reward(self, completed_ids: List[int], picked_up_ids: List[int]) -> float:
+        """计算奖励
+        
+        Args:
+            completed_ids: 本次完成卸货的货物ID列表
+            picked_up_ids: 本次完成取货的货物ID列表
+        
+        Returns:
+            float: 奖励值
+        """
         reward = 0.0
         
         # 完成卸货奖励
         reward += len(completed_ids) * REWARD_DELIVERY
         
-        # 等待惩罚
+        # 完成取货奖励
+        reward += len(picked_up_ids) * REWARD_PICKUP
+        
+        # 等待惩罚（针对在上料口等待的货物）
         for cargo in self.cargos.values():
             if cargo.completion_time is None and cargo.id not in completed_ids:
-                reward -= REWARD_WAIT_PENALTY_COEFF * cargo.wait_time(self.current_time) * LOW_LEVEL_CONTROL_INTERVAL
-                # 超时货物额外惩罚（优先级提升的体现）
-                if cargo.is_timeout(self.current_time):
-                    reward += REWARD_TIMEOUT_PENALTY * LOW_LEVEL_CONTROL_INTERVAL / CARGO_TIMEOUT
+                # 如果货物还在上料口等待（未被取走）
+                if cargo.picked_up_time is None:
+                    reward -= REWARD_WAIT_PENALTY_COEFF * cargo.wait_time(self.current_time) * LOW_LEVEL_CONTROL_INTERVAL
+                    # 超时货物额外惩罚（优先级提升的体现）
+                    if cargo.is_timeout(self.current_time):
+                        reward += REWARD_TIMEOUT_PENALTY * LOW_LEVEL_CONTROL_INTERVAL / CARGO_TIMEOUT
+        
+        # 持有货物惩罚（针对车上的货物，鼓励快速卸货）
+        for vehicle in self.vehicles.values():
+            for cargo_id in vehicle.slots:
+                if cargo_id is not None:
+                    cargo = self.cargos[cargo_id]
+                    if cargo.picked_up_time is not None:
+                        # 计算持有时间
+                        holding_time = self.current_time - cargo.picked_up_time
+                        # 根据持有时间给予惩罚，鼓励尽快卸货
+                        reward -= REWARD_HOLDING_PENALTY_COEFF * holding_time * LOW_LEVEL_CONTROL_INTERVAL
         
         return reward
     

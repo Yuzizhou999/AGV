@@ -4,7 +4,7 @@
 
 import torch
 import numpy as np
-from typing import Tuple, List
+from typing import Tuple, List, Optional
 import time
 import json
 from datetime import datetime
@@ -19,12 +19,35 @@ from agent_low_level import LowLevelAgent, LowLevelController
 class TrainingManager:
     """训练管理器"""
     
-    def __init__(self, num_episodes: int = NUM_EPISODES, use_gpu: bool = False):
+    def __init__(self, num_episodes: int = NUM_EPISODES, use_gpu: bool = False, 
+                 enable_visualization: bool = False, vis_update_interval: int = 10):
+        """
+        初始化训练管理器
+        
+        Args:
+            num_episodes: 训练回合数
+            use_gpu: 是否使用GPU
+            enable_visualization: 是否启用可视化
+            vis_update_interval: 可视化更新间隔（每多少步更新一次）
+        """
         self.num_episodes = num_episodes
         self.device = 'cuda' if (use_gpu and torch.cuda.is_available()) else 'cpu'
+        self.enable_visualization = enable_visualization
+        self.vis_update_interval = vis_update_interval
         
         # 初始化环境
         self.env = Environment(seed=42)
+        
+        # 初始化可视化器（如果启用）
+        self.visualizer = None
+        if self.enable_visualization:
+            try:
+                from visualizer import AGVVisualizer
+                self.visualizer = AGVVisualizer(self.env)
+                print("✓ 可视化已启用")
+            except ImportError:
+                print("⚠ 无法导入可视化模块，禁用可视化")
+                self.enable_visualization = False
         
         # 计算观测维度
         # 高层观测：需要从环境获取实际维度
@@ -149,6 +172,10 @@ class TrainingManager:
                 self.high_level_agent.update_target_network()
                 self.low_level_agent.update_target_network()
             
+            # 更新可视化（如果启用）
+            if self.enable_visualization and step_count % self.vis_update_interval == 0:
+                self.visualizer.update()
+            
             if done:
                 break
         
@@ -271,6 +298,12 @@ class TrainingManager:
         print(f"  平均奖励: {np.mean(self.episode_rewards):.2f} (最后100个: {np.mean(self.episode_rewards[-100:]):.2f})")
         print(f"  最大奖励: {np.max(self.episode_rewards):.2f}")
         print(f"  最小奖励: {np.min(self.episode_rewards):.2f}")
+        
+        # 如果启用了可视化，显示训练统计图表
+        if self.enable_visualization and self.visualizer is not None:
+            print("\n正在生成可视化统计图表...")
+            self.visualizer.plot_statistics(save_path="training_visualization_stats.png")
+            self.visualizer.close()
         avg_completed = np.mean(self.episode_completions)
         avg_completed_timeout = np.mean(self.episode_completed_timeouts)
         avg_completed_normal = avg_completed - avg_completed_timeout
@@ -348,15 +381,34 @@ class TrainingManager:
 
 def main():
     """主函数"""
+    import argparse
+    
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(description='训练AGV调度系统')
+    parser.add_argument('--visualize', action='store_true', 
+                       help='启用可视化（会显著降低训练速度）')
+    parser.add_argument('--vis-interval', type=int, default=50,
+                       help='可视化更新间隔（步数）')
+    args = parser.parse_args()
+    
     # 检查GPU可用性
     use_gpu = torch.cuda.is_available()
     print(f"GPU可用: {use_gpu}")
     if use_gpu:
         print(f"GPU设备: {torch.cuda.get_device_name(0)}")
+    
+    if args.visualize:
+        print("⚠ 可视化已启用 - 训练速度会显著降低")
+        print(f"  可视化更新间隔: {args.vis_interval} 步")
     print()
     
     # 创建训练管理器
-    manager = TrainingManager(num_episodes=NUM_EPISODES, use_gpu=use_gpu)
+    manager = TrainingManager(
+        num_episodes=NUM_EPISODES, 
+        use_gpu=use_gpu,
+        enable_visualization=True,
+        vis_update_interval=args.vis_interval
+    )
     
     # 开始训练
     manager.train()
