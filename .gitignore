@@ -3,4 +3,5 @@
 requirements.txt
 .gitignore
 models
-__pycache__
+__pycache__/
+*.pyc
