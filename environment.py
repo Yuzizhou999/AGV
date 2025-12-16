@@ -407,6 +407,7 @@ class Environment:
     
     def _process_loading_operations(self):
         """处理上料操作：检查车辆是否对齐上料口，执行上料
+        支持双工位同时上料以提高效率
         
         Returns:
             List[int]: 本次完成取货的货物ID列表
@@ -439,6 +440,22 @@ class Environment:
                 cargo.picked_up_time = self.current_time  # 记录被取走的时间
                 vehicle.is_loading_unloading = True  # 锁定车辆移动
                 vehicle.velocity = 0.0  # 立即停止车辆
+                
+                # 检查是否可以启用双工位同时上料
+                # 条件：两个工位都有任务且都在同一个上料口
+                for other_cargo in self.cargos.values():
+                    if (other_cargo.id != cargo.id and
+                        other_cargo.assigned_vehicle == cargo.assigned_vehicle and
+                        other_cargo.loading_station == cargo.loading_station and
+                        other_cargo.current_location.startswith("IP_") and
+                        other_cargo.loading_start_time is None):
+                        # 找到另一个工位的货物，同时开始上料
+                        other_slot_idx = other_cargo.assigned_vehicle_slot
+                        if vehicle.slots[other_slot_idx] is None:
+                            other_cargo.loading_start_time = self.current_time
+                            other_cargo.picked_up_time = self.current_time
+                        break
+                
                 continue  # 本轮只开始计时，下一轮再检查完成
             
             # 上料已经在进行中，车辆应该保持锁定状态
@@ -501,6 +518,7 @@ class Environment:
     
     def _process_unloading_operations(self) -> List[int]:
         """处理下料操作：检查车辆是否对齐下料口，执行下料
+        支持双工位同时下料以提高效率
 
         Returns:
             List[int]: 本次完成卸货的货物ID列表
@@ -530,6 +548,18 @@ class Environment:
                     cargo.unloading_start_time = self.current_time
                     vehicle.is_loading_unloading = True  # 锁定车辆移动
                     vehicle.velocity = 0.0  # 立即停止车辆
+                    
+                    # 检查是否可以启用双工位同时下料
+                    # 条件：两个工位都有货物且都去往同一个下料口
+                    other_slot_idx = 1 - slot_idx  # 另一个工位（0->1, 1->0）
+                    other_cargo_id = vehicle.slots[other_slot_idx]
+                    if other_cargo_id is not None and other_cargo_id in self.cargos:
+                        other_cargo = self.cargos[other_cargo_id]
+                        if (other_cargo.target_unloading_station == cargo.target_unloading_station and
+                            other_cargo.unloading_start_time is None):
+                            # 两个工位都去往同一个下料口，同时开始下料
+                            other_cargo.unloading_start_time = self.current_time
+                    
                     continue  # 本轮只开始计时，下一轮再检查完成
                 
                 # 下料已经在进行中，车辆应该保持锁定状态
