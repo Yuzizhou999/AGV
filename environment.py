@@ -593,6 +593,9 @@ class Environment:
                     cargo.unloading_start_time = None
                     self.completed_cargos += 1
                     
+                    # 累加总等待时间
+                    self.total_wait_time += cargo.wait_time(self.current_time)
+                    
                     # 保存已完成货物的详细信息
                     completed_info = {
                         'id': cargo.id,
@@ -662,14 +665,36 @@ class Environment:
         """
         reward = 0.0
         
-        # 完成卸货奖励
-        reward += len(completed_ids) * REWARD_DELIVERY
+        # 完成卸货奖励(需要检查是否超时完成,并根据等待时间分级奖励)
+        for cargo_id in completed_ids:
+            # 从completed_cargo_list中获取刚完成的货物信息
+            completed_cargo = next((c for c in self.completed_cargo_list if c['id'] == cargo_id), None)
+            if completed_cargo:
+                wait_time = completed_cargo['wait_time']
+                if wait_time > CARGO_TIMEOUT:
+                    # 超时完成:给予净惩罚(改进:从+1.0变为-8.0)
+                    reward += REWARD_DELIVERY * 0.1  # 只给10%的完成奖励
+                    reward += REWARD_TIMEOUT_PENALTY * 2  # 加倍超时惩罚
+                elif wait_time < CARGO_TIMEOUT * 0.5:
+                    # 快速完成(少于150秒):给予额外奖励
+                    reward += REWARD_DELIVERY * 1.2  # 120%奖励
+                else:
+                    # 正常完成(150-300秒):给予完整奖励
+                    reward += REWARD_DELIVERY
         
-        # 完成取货奖励
-        reward += len(picked_up_ids) * REWARD_PICKUP
+        # 完成取货奖励(优先取超时货物给予额外奖励)
+        for cargo_id in picked_up_ids:
+            cargo = self.cargos.get(cargo_id)
+            if cargo:
+                wait_time = cargo.wait_time(self.current_time)
+                if wait_time > CARGO_TIMEOUT:
+                    # 取货的是超时货物,给予额外奖励
+                    reward += REWARD_PICKUP * 1.5  # 150%取货奖励
+                else:
+                    reward += REWARD_PICKUP
         
-        # 分配货物奖励
-        reward += len(assigned_ids) * REWARD_ASSIGNMENT
+        # 分配货物奖励(降低以避免过度分配)
+        reward += len(assigned_ids) * REWARD_ASSIGNMENT * 0.5
         
         # 等待惩罚（针对在上料口等待的货物）
         for cargo in self.cargos.values():
@@ -683,6 +708,11 @@ class Environment:
         
         # 持有货物惩罚（针对车上的货物，鼓励快速卸货）
         for vehicle in self.vehicles.values():
+            # 车辆利用率奖励:如果两个工位都有货物,给予额外奖励
+            occupied_slots = sum(1 for slot in vehicle.slots if slot is not None)
+            if occupied_slots == 2:
+                reward += 0.5 * LOW_LEVEL_CONTROL_INTERVAL  # 每步+0.5的利用率奖励
+            
             for cargo_id in vehicle.slots:
                 if cargo_id is not None:
                     cargo = self.cargos[cargo_id]

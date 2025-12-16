@@ -73,8 +73,10 @@ class TrainingManager:
         self.episode_rewards = []
         self.episode_completions = []
         self.episode_completed_timeouts = []
-        self.episode_waiting_timeouts = []
-        self.episode_avg_wait_times = []
+        self.episode_waiting_normals = []  # 不超时等待
+        self.episode_waiting_timeouts = []  # 超时等待
+        self.episode_avg_wait_times = []  # 平均等待时间(到被取走)
+        self.episode_avg_completion_times = []  # 平均完成时间(到完成下料)
         self.episode_times = []
         
         # 最佳模型追踪
@@ -89,7 +91,10 @@ class TrainingManager:
         训练一个episode
         
         Returns:
-            (total_reward, completed_count, completed_timeout_count, waiting_timeout_count, avg_wait_time, total_cargos, waiting_cargos, on_vehicle_cargos)
+            (total_reward, completed_count, completed_timeout_count, 
+             waiting_cargos_normal, waiting_cargos_timeout,
+             avg_wait_time, avg_completion_time,
+             total_cargos, waiting_cargos, on_vehicle_cargos)
         """
         obs = self.env.reset()
         episode_reward = 0.0
@@ -184,23 +189,42 @@ class TrainingManager:
         
         # 统计
         completed_count = self.env.completed_cargos
-        # 统计完成货物中超时的数量
-        completed_timeout_count = sum(1 for c in self.env.cargos.values()
-                                     if c.completion_time is not None and c.wait_time(c.completion_time) > CARGO_TIMEOUT)
-        # 统计等待中超时的数量
-        waiting_timeout_count = self.env.timed_out_cargos
+        # 统计完成货物中超时的数量(从completed_cargo_list统计,因为完成的货物已从cargos中删除)
+        completed_timeout_count = sum(1 for c in self.env.completed_cargo_list
+                                     if c.get('wait_time', 0) > CARGO_TIMEOUT)
+        # 统计等待中的货物:分为超时等待和不超时等待
+        waiting_cargos_normal = sum(1 for c in self.env.cargos.values() 
+                                   if c.completion_time is None 
+                                   and c.current_location.startswith("IP_")
+                                   and not c.is_timeout(self.env.current_time))
+        waiting_cargos_timeout = sum(1 for c in self.env.cargos.values() 
+                                    if c.completion_time is None 
+                                    and c.current_location.startswith("IP_")
+                                    and c.is_timeout(self.env.current_time))
+        
         total_cargos = self.env.cargo_counter
-        waiting_cargos = sum(1 for c in self.env.cargos.values() 
-                           if c.completion_time is None and c.current_location.startswith("IP_"))
+        waiting_cargos = waiting_cargos_normal + waiting_cargos_timeout  # 总等待数
         on_vehicle_cargos = sum(1 for c in self.env.cargos.values()
                                if c.completion_time is None and c.current_location.startswith("vehicle_"))
-        avg_wait_time = self.env.total_wait_time / max(1, self.env.cargo_counter)
+        
+        # 平均等待时间(从到达到被取走)
+        avg_wait_time = self.env.total_wait_time / max(1, self.env.completed_cargos)
+        
+        # 平均完成时间(从到达到完成下料)
+        if self.env.completed_cargo_list:
+            avg_completion_time = sum(c['completion_time'] - c['arrival_time'] 
+                                     for c in self.env.completed_cargo_list) / len(self.env.completed_cargo_list)
+        else:
+            avg_completion_time = 0.0
         
         # 在episode结束后衰减探索率（只针对高层智能体）
         self.high_level_agent.decay_epsilon()
         # self.low_level_agent.decay_epsilon()  # 使用启发式控制，不需要探索
         
-        return episode_reward, completed_count, completed_timeout_count, waiting_timeout_count, avg_wait_time, total_cargos, waiting_cargos, on_vehicle_cargos
+        return (episode_reward, completed_count, completed_timeout_count, 
+                waiting_cargos_normal, waiting_cargos_timeout, 
+                avg_wait_time, avg_completion_time,
+                total_cargos, waiting_cargos, on_vehicle_cargos)
     
     def train(self):
         """训练整个系统"""
@@ -229,15 +253,20 @@ class TrainingManager:
         for episode in range(self.num_episodes):
             episode_start_time = time.time()
             
-            episode_reward, completed, completed_timeout, waiting_timeout, avg_wait, total_cargos, waiting_cargos, on_vehicle_cargos = self.train_episode(episode)
+            (episode_reward, completed, completed_timeout, 
+             waiting_normal, waiting_timeout, 
+             avg_wait, avg_completion,
+             total_cargos, waiting_cargos, on_vehicle_cargos) = self.train_episode(episode)
             
             episode_time = time.time() - episode_start_time
             
             self.episode_rewards.append(episode_reward)
             self.episode_completions.append(completed)
             self.episode_completed_timeouts.append(completed_timeout)
+            self.episode_waiting_normals.append(waiting_normal)
             self.episode_waiting_timeouts.append(waiting_timeout)
             self.episode_avg_wait_times.append(avg_wait)
+            self.episode_avg_completion_times.append(avg_completion)
             self.episode_times.append(episode_time)
             
             # 获取当前探索率和经验池大小
@@ -251,11 +280,11 @@ class TrainingManager:
             print(f"Episode {episode+1:4d}/{self.num_episodes} | "
                   f"奖励: {episode_reward:9.2f} | "
                   f"完成: {completed:3d} (正常: {completed_normal:3d}, 超时: {completed_timeout:2d}) | "
-                  f"待取超时: {waiting_timeout:2d} | "
+                  f"待取: {waiting_cargos:2d} (正常: {waiting_normal:2d}, 超时: {waiting_timeout:2d}) | "
                   f"总货: {total_cargos:3d} | "
-                  f"待取: {waiting_cargos:2d} | "
                   f"在车: {on_vehicle_cargos:2d} | "
                   f"等待: {avg_wait:6.2f}s | "
+                  f"完成: {avg_completion:6.2f}s | "
                   f"ε: {current_epsilon:.3f} | "
                   f"缓冲: {replay_size:6d} | "
                   f"耗时: {episode_time:5.2f}s", flush=True)
@@ -265,14 +294,17 @@ class TrainingManager:
                 avg_reward = np.mean(self.episode_rewards[-10:])
                 avg_completion = np.mean(self.episode_completions[-10:])
                 avg_completed_timeout = np.mean(self.episode_completed_timeouts[-10:])
+                avg_waiting_normal = np.mean(self.episode_waiting_normals[-10:])
                 avg_waiting_timeout = np.mean(self.episode_waiting_timeouts[-10:])
                 avg_wait_10 = np.mean(self.episode_avg_wait_times[-10:])
+                avg_completion_time_10 = np.mean(self.episode_avg_completion_times[-10:])
                 
                 print(f"  [Episode {episode-8:4d}-{episode+1:4d} 统计] "
                       f"平均奖励: {avg_reward:9.2f} | "
                       f"平均完成: {avg_completion:6.1f} (正常: {avg_completion-avg_completed_timeout:5.1f}, 超时: {avg_completed_timeout:4.1f}) | "
-                      f"平均待取超时: {avg_waiting_timeout:4.1f} | "
-                      f"平均等待: {avg_wait_10:6.2f}s", flush=True)
+                      f"平均待取: {avg_waiting_normal+avg_waiting_timeout:4.1f} (正常: {avg_waiting_normal:4.1f}, 超时: {avg_waiting_timeout:4.1f}) | "
+                      f"平均等待: {avg_wait_10:6.2f}s | "
+                      f"平均完成: {avg_completion_time_10:6.2f}s", flush=True)
                 
                 # 检查是否是最佳模型
                 if avg_reward > self.best_avg_reward:
@@ -308,14 +340,21 @@ class TrainingManager:
             print("\n正在生成可视化统计图表...")
             self.visualizer.plot_statistics(save_path="training_visualization_stats.png")
             self.visualizer.close()
+        
         avg_completed = np.mean(self.episode_completions)
         avg_completed_timeout = np.mean(self.episode_completed_timeouts)
         avg_completed_normal = avg_completed - avg_completed_timeout
+        avg_waiting_normal = np.mean(self.episode_waiting_normals)
+        avg_waiting_timeout = np.mean(self.episode_waiting_timeouts)
+        
         print(f"  平均完成件数: {avg_completed:.2f} (最后100个: {np.mean(self.episode_completions[-100:]):.2f})")
         print(f"    - 正常完成: {avg_completed_normal:.2f}")
         print(f"    - 超时完成: {avg_completed_timeout:.2f}")
-        print(f"  平均待取超时件数: {np.mean(self.episode_waiting_timeouts):.2f}")
-        print(f"  平均等待时间: {np.mean(self.episode_avg_wait_times):.2f}秒")
+        print(f"  平均待取件数: {avg_waiting_normal + avg_waiting_timeout:.2f}")
+        print(f"    - 正常等待: {avg_waiting_normal:.2f}")
+        print(f"    - 超时等待: {avg_waiting_timeout:.2f}")
+        print(f"  平均等待时间(到被取走): {np.mean(self.episode_avg_wait_times):.2f}秒")
+        print(f"  平均完成时间(到完成下料): {np.mean(self.episode_avg_completion_times):.2f}秒")
         print(f"  最佳平均奖励: {self.best_avg_reward:.2f}")
         print(f"  最佳平均完成: {self.best_avg_completion:.1f}")
         print()
@@ -360,8 +399,10 @@ class TrainingManager:
             'episode_rewards': [float(x) for x in self.episode_rewards],
             'episode_completions': [int(x) for x in self.episode_completions],
             'episode_completed_timeouts': [int(x) for x in self.episode_completed_timeouts],
+            'episode_waiting_normals': [int(x) for x in self.episode_waiting_normals],
             'episode_waiting_timeouts': [int(x) for x in self.episode_waiting_timeouts],
             'episode_avg_wait_times': [float(x) for x in self.episode_avg_wait_times],
+            'episode_avg_completion_times': [float(x) for x in self.episode_avg_completion_times],
             'episode_times': [float(x) for x in self.episode_times],
             'total_steps': self.total_steps,
             'best_avg_reward': float(self.best_avg_reward),

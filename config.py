@@ -31,7 +31,7 @@ LOADING_TIME = 15.0  # 单工位上料耗时(秒)，根据project.md要求
 UNLOADING_TIME = 15.0  # 单工位下料耗时(秒)，根据project.md要求
 
 # ========== 仿真配置 ==========
-EPISODE_DURATION = 8 * 3600  # 仿真时长1小时，足够产生有意义的训练数据
+EPISODE_DURATION = 3600  # 仿真时长1小时，足够产生有意义的训练数据
 HIGH_LEVEL_DECISION_INTERVAL = 1.0  # 高层决策时间间隔(秒)
 LOW_LEVEL_CONTROL_INTERVAL = 0.5  # 低层控制时间间隔(秒)，0.5秒保证控制精度
 
