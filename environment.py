@@ -60,12 +60,15 @@ class Vehicle:
     slots: List[Optional[int]]  # 两个工位上的货物ID (None表示空)
     slot_operation_end_time: List[float]  # 每个工位的操作结束时间
     is_loading_unloading: bool = False  # 是否正在进行上料/下料操作（锁定移动）
+    assigned_tasks: List[Dict] = None  # 任务队列：记录高层分配的任务
     
     def __post_init__(self):
         if len(self.slots) != 2:
             self.slots = [None, None]
         if len(self.slot_operation_end_time) != 2:
             self.slot_operation_end_time = [0.0, 0.0]
+        if self.assigned_tasks is None:
+            self.assigned_tasks = []
     
     def has_empty_slot(self) -> bool:
         """是否有空工位"""
@@ -312,13 +315,14 @@ class Environment:
                 continue
             
             # action: 0=减速, 1=保持, 2=加速
+            # 轨道坐标定义为沿顺时针方向，速度不允许为负（不支持反向行驶）
             if action == 0:
-                new_velocity = max(-MAX_SPEED, vehicle.velocity - MAX_ACCELERATION * LOW_LEVEL_CONTROL_INTERVAL)
+                new_velocity = max(0, vehicle.velocity - MAX_ACCELERATION * LOW_LEVEL_CONTROL_INTERVAL)
             elif action == 1:
                 new_velocity = vehicle.velocity
             else:  # action == 2
                 new_velocity = min(MAX_SPEED, vehicle.velocity + MAX_ACCELERATION * LOW_LEVEL_CONTROL_INTERVAL)
-            
+
             # 检查安全距离约束
             if not self._check_safety_distance(vehicle_id, new_velocity):
                 new_velocity = 0.0  # 强制停止
@@ -395,15 +399,55 @@ class Environment:
                     self.unloading_stations[unloading_station_id].has_empty_slot()):
                     cargo.target_unloading_station = unloading_station_id
                     cargo.target_slot = slot_idx
+                    
+                    # 在车辆任务队列中添加下料任务
+                    if cargo.assigned_vehicle is not None:
+                        vehicle = self.vehicles[cargo.assigned_vehicle]
+                        unloading_station = self.unloading_stations[unloading_station_id]
+                        task = {
+                            'type': 'unloading',
+                            'cargo_id': cargo_id,
+                            'target_position': unloading_station.position,
+                            'station_id': unloading_station_id,
+                            'slot_idx': slot_idx
+                        }
+                        
+                        # 避免重复添加任务
+                        task_exists = any(
+                            t['type'] == 'unloading' and t['cargo_id'] == cargo_id 
+                            for t in vehicle.assigned_tasks
+                        )
+                        if not task_exists:
+                            vehicle.assigned_tasks.append(task)
         
         return assigned_ids
     
     def _assign_loading_task(self, cargo_id: int, vehicle_id: int, slot_idx: int):
         """分配上料任务（只标记任务，实际上料在车辆对齐时执行）"""
         cargo = self.cargos[cargo_id]
-        # 标记任务分配
+        vehicle = self.vehicles[vehicle_id]
+        
+        # 标记货物任务分配
         cargo.assigned_vehicle = vehicle_id
         cargo.assigned_vehicle_slot = slot_idx
+        
+        # 在车辆任务队列中添加上料任务
+        loading_station = self.loading_stations[cargo.loading_station]
+        task = {
+            'type': 'loading',
+            'cargo_id': cargo_id,
+            'target_position': loading_station.position,
+            'station_id': cargo.loading_station,
+            'slot_idx': slot_idx
+        }
+        
+        # 避免重复添加任务
+        task_exists = any(
+            t['type'] == 'loading' and t['cargo_id'] == cargo_id 
+            for t in vehicle.assigned_tasks
+        )
+        if not task_exists:
+            vehicle.assigned_tasks.append(task)
     
     def _process_loading_operations(self):
         """处理上料操作：检查车辆是否对齐上料口，执行上料
@@ -489,6 +533,12 @@ class Environment:
                 cargo.loading_start_time = None
                 # 注意：不在这里解除锁定，统一在函数最后处理
                 picked_up_ids.append(cargo.id)  # 记录完成取货的货物
+                
+                # 从车辆任务队列中移除上料任务
+                vehicle.assigned_tasks = [
+                    t for t in vehicle.assigned_tasks 
+                    if not (t['type'] == 'loading' and t['cargo_id'] == cargo.id)
+                ]
         
         # 统一检查所有车辆：如果没有任何货物正在上料或下料，则解除锁定
         for vehicle in self.vehicles.values():
@@ -614,6 +664,12 @@ class Environment:
                     # 注意：不在这里解除锁定，统一在函数最后处理
                     # 记录已完成的货物ID
                     completed_cargo_ids.append(cargo_id)
+                    
+                    # 从车辆任务队列中移除下料任务
+                    vehicle.assigned_tasks = [
+                        t for t in vehicle.assigned_tasks 
+                        if not (t['type'] == 'unloading' and t['cargo_id'] == cargo_id)
+                    ]
         
         # 删除已完成的货物（在遍历后删除，避免遍历时修改字典）
         for cargo_id in completed_cargo_ids:

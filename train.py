@@ -196,11 +196,11 @@ class TrainingManager:
         waiting_cargos_normal = sum(1 for c in self.env.cargos.values() 
                                    if c.completion_time is None 
                                    and c.current_location.startswith("IP_")
-                                   and not c.is_timeout(self.env.current_time))
+                                   and not c.is_timeout(self.env.current_time) and c.picked_up_time is None)
         waiting_cargos_timeout = sum(1 for c in self.env.cargos.values() 
                                     if c.completion_time is None 
                                     and c.current_location.startswith("IP_")
-                                    and c.is_timeout(self.env.current_time))
+                                    and c.is_timeout(self.env.current_time) and c.picked_up_time is None)
         
         total_cargos = self.env.cargo_counter
         waiting_cargos = waiting_cargos_normal + waiting_cargos_timeout  # 总等待数

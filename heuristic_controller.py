@@ -49,26 +49,26 @@ class HeuristicLowLevelController:
         return actions
     
     def _update_vehicle_target(self, vehicle_id: int):
-        """更新车辆的目标位置和运动规划"""
+        """更新车辆的目标位置和运动规划
+        
+        基于车辆任务队列决定目标位置：
+        1. 优先处理队列中的第一个任务（FIFO）
+        2. 如果没有任务但车上有货，自动寻找下料位置
+        3. 如果完全空闲，保持当前状态
+        """
         vehicle = self.env.vehicles[vehicle_id]
         current_plan = self.vehicle_plans[vehicle_id]
         
-        # 检查车辆是否有任务
+        # 检查车辆任务队列
         target_position = None
-        is_loading_task = False
+        target_task = None
         
-        # 检查是否有货物需要取货
-        for cargo in self.env.cargos.values():
-            if (cargo.assigned_vehicle == vehicle_id and 
-                cargo.current_location.startswith("IP_")):
-                # 需要去上料口取货
-                loading_station = self.env.loading_stations[cargo.loading_station]
-                target_position = loading_station.position
-                is_loading_task = True
-                break
-        
-        # 检查车上是否有货物需要卸货
-        if target_position is None:
+        # 优先使用任务队列中的第一个任务
+        if vehicle.assigned_tasks:
+            target_task = vehicle.assigned_tasks[0]
+            target_position = target_task['target_position']
+        else:
+            # 如果没有显式任务，检查车上是否有货物需要卸货（兜底逻辑）
             for slot_idx, cargo_id in enumerate(vehicle.slots):
                 if cargo_id is not None:
                     cargo = self.env.cargos[cargo_id]
@@ -76,7 +76,6 @@ class HeuristicLowLevelController:
                         # 需要去下料口卸货
                         unloading_station = self.env.unloading_stations[cargo.target_unloading_station]
                         target_position = unloading_station.position
-                        is_loading_task = False
                         break
         
         # 无任务，清除规划
@@ -247,9 +246,9 @@ class HeuristicLowLevelController:
             else:
                 return 1  # 保持静止，不移动
         
-        # 无规划时，保持巡航
+        # 无规划时，智能巡航：空闲车辆主动接近最近的待取货位置
         if plan is None:
-            return self._cruise_action(vehicle_id)
+            return self._cruise_action_smart(vehicle_id)
         
         # 如果已经对齐目标位置，保持静止
         if plan['phase'] == 'aligned':
@@ -393,6 +392,73 @@ class HeuristicLowLevelController:
                 return 0  # 减速
             return 1  # 保持
     
+    def _cruise_action_smart(self, vehicle_id: int) -> int:
+        """
+        智能巡航模式：空闲车辆主动接近最近的待取货位置
+        
+        策略：
+        1. 如果车辆有空位，寻找最近的有货物等待的上料口
+        2. 朝着目标方向缓慢移动，保持一定速度
+        3. 如果没有待取货物，则普通巡航
+        
+        Returns:
+            int: 0(减速), 1(保持), 2(加速)
+        """
+        vehicle = self.env.vehicles[vehicle_id]
+        
+        # 只有有空位的车辆才主动寻找货物
+        if not vehicle.has_empty_slot():
+            return self._cruise_action(vehicle_id)
+        
+        # 寻找最近的有待取货物的上料口
+        nearest_station_pos = None
+        min_distance = float('inf')
+        
+        for loading_station in self.env.loading_stations.values():
+            # 检查该上料口是否有待取货物（未被分配或已分配给当前车辆）
+            has_waiting_cargo = False
+            for cargo in self.env.cargos.values():
+                if (cargo.loading_station == loading_station.id and
+                    cargo.current_location.startswith("IP_") and
+                    cargo.completion_time is None and
+                    (cargo.assigned_vehicle is None or cargo.assigned_vehicle == vehicle_id)):
+                    has_waiting_cargo = True
+                    break
+            
+            if has_waiting_cargo:
+                distance = vehicle.distance_to(loading_station.position)
+                if distance < min_distance:
+                    min_distance = distance
+                    nearest_station_pos = loading_station.position
+        
+        # 如果没有找到待取货物，执行普通巡航
+        if nearest_station_pos is None:
+            return self._cruise_action(vehicle_id)
+        
+        # 计算朝向目标的理想速度（较低速度，避免过快到达）
+        target_cruise_speed = MAX_SPEED * 0.5  # 50%最大速度
+        
+        # 如果距离很近（小于安全距离的2倍），停车等待
+        if min_distance < SAFETY_DISTANCE * 2:
+            if vehicle.velocity > 0.1:
+                return 0  # 减速
+            else:
+                return 1  # 保持停止
+        
+        # 根据当前速度和目标速度调整
+        if vehicle.velocity < target_cruise_speed - 0.2:
+            # 需要加速，但要检查安全距离
+            if self._will_violate_safety(vehicle_id, 2):
+                return 1  # 保持
+            return 2  # 加速
+        elif vehicle.velocity > target_cruise_speed + 0.2:
+            return 0  # 减速
+        else:
+            # 检查前方是否有车太近
+            if self._will_violate_safety(vehicle_id, 1):
+                return 0  # 减速
+            return 1  # 保持
+    
     def _is_blocked_by_loading_vehicle(self, vehicle_id: int, target_position: float) -> bool:
         """
         检查从当前位置到目标位置的路径上是否有其他车辆正在进行上下料操作
@@ -443,7 +509,7 @@ class HeuristicLowLevelController:
         
         # 计算新速度
         if action == 0:
-            new_velocity = max(-MAX_SPEED, vehicle.velocity - MAX_ACCELERATION * LOW_LEVEL_CONTROL_INTERVAL)
+            new_velocity = max(0, vehicle.velocity - MAX_ACCELERATION * LOW_LEVEL_CONTROL_INTERVAL)
         elif action == 1:
             new_velocity = vehicle.velocity
         else:  # action == 2
