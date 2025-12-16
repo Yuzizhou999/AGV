@@ -96,7 +96,19 @@ class HeuristicLowLevelController:
         # 情况3: 速度为0且不在目标位置（可能因安全距离停止）
         elif vehicle.velocity == 0.0 and not vehicle.is_aligned_with(target_position) and not vehicle.is_loading_unloading:
             need_replan = True
-        # 情况4: 已经对齐目标位置
+        # 情况4: 已经处于decel或aligned阶段，但检测到未对齐（位置或速度不满足）
+        elif current_plan['phase'] in ['decel', 'aligned']:
+            # 计算当前距离
+            current_distance = vehicle.distance_to(target_position)
+            
+            # 检查位置是否接近（距离小于等于2米认为接近）
+            if current_distance <= 2.0:
+                # 接近目标时，检查是否真正对齐
+                if not vehicle.is_aligned_with(target_position):
+                    # 未对齐，需要重新规划
+                    # 可能是位置不够精确，或者速度太快
+                    need_replan = True
+        # 情况5: 已经对齐目标位置
         elif vehicle.is_aligned_with(target_position):
             # 如果已对齐，标记为aligned阶段
             if current_plan['phase'] != 'aligned':
@@ -107,18 +119,19 @@ class HeuristicLowLevelController:
         if need_replan:
             self.vehicle_plans[vehicle_id] = self._plan_motion(vehicle, target_position)
     
-    def _plan_motion(self, vehicle, target_position: float) -> Dict:
+    def _plan_motion(self, vehicle, target_position: float, is_station: bool = True) -> Dict:
         """
         规划从当前位置到目标位置的运动轨迹
         
         运动分为三个阶段：
         1. 加速阶段：从当前速度加速到巡航速度
         2. 匀速阶段：保持巡航速度
-        3. 减速阶段：从巡航速度减速到0
+        3. 减速阶段：从巡航速度减速到目标速度
         
         Args:
             vehicle: 车辆对象
             target_position: 目标位置
+            is_station: 是否是上下料口（如果是，则需要减速到SPEED_TOLERANCE以下）
         
         Returns:
             运动规划字典
@@ -128,22 +141,30 @@ class HeuristicLowLevelController:
         a = MAX_ACCELERATION
         v_max = MAX_SPEED
         
-        # 计算从当前速度减速到0所需的距离
-        s_decel_from_current = (current_v ** 2) / (2 * a) if current_v > 0 else 0
+        # 如果是上下料口，目标速度为SPEED_TOLERANCE/2（留有余量）
+        # 否则目标速度为0
+        v_target = SPEED_TOLERANCE / 2 if is_station else 0.0
+        
+        # 计算从当前速度减速到目标速度所需的距离
+        if current_v > v_target:
+            s_decel_from_current = (current_v ** 2 - v_target ** 2) / (2 * a)
+        else:
+            s_decel_from_current = 0
         
         # 计算从0加速到最大速度所需的距离
-        s_accel_to_max = (v_max ** 2) / (2 * a)
+        s_accel_to_max = (v_max ** 2 - v_target ** 2) / (2 * a)
         
-        # 计算从最大速度减速到0所需的距离
+        # 计算从最大速度减速到目标速度所需的距离
         s_decel_from_max = s_accel_to_max  # 对称
         
         # 判断是否能达到最大速度
-        # 如果当前速度已经较高，先计算减速到0需要的距离
+        # 如果当前速度已经较高，先计算减速到目标速度需要的距离
         if s_decel_from_current >= distance:
             # 距离太短，必须立即减速
             return {
                 'target_position': target_position,
-                'cruise_speed': 0,
+                'target_speed': v_target,
+                'cruise_speed': v_target,
                 'accel_distance': 0,
                 'cruise_distance': 0,
                 'decel_distance': distance,
@@ -151,7 +172,7 @@ class HeuristicLowLevelController:
             }
         
         # 计算如果加速到最大速度再减速，总共需要多少距离
-        # s_total = (v_max^2 - v_current^2)/(2a) + v_max^2/(2a)
+        # s_total = (v_max^2 - v_current^2)/(2a) + (v_max^2 - v_target^2)/(2a)
         s_accel = (v_max ** 2 - current_v ** 2) / (2 * a)
         total_accel_decel = s_accel + s_decel_from_max
         
@@ -164,17 +185,17 @@ class HeuristicLowLevelController:
         else:
             # 不能达到最大速度，计算最高能达到的速度
             # s_accel + s_decel = distance
-            # (v_cruise^2 - v_current^2)/(2a) + v_cruise^2/(2a) = distance
-            # (2*v_cruise^2 - v_current^2)/(2a) = distance
-            # v_cruise^2 = a*distance + v_current^2/2
-            cruise_speed_squared = a * distance + (current_v ** 2) / 2
-            if cruise_speed_squared > 0:
+            # (v_cruise^2 - v_current^2)/(2a) + (v_cruise^2 - v_target^2)/(2a) = distance
+            # (2*v_cruise^2 - v_current^2 - v_target^2)/(2a) = distance
+            # v_cruise^2 = a*distance + (v_current^2 + v_target^2)/2
+            cruise_speed_squared = a * distance + (current_v ** 2 + v_target ** 2) / 2
+            if cruise_speed_squared > v_target ** 2:
                 cruise_speed = min(v_max, np.sqrt(cruise_speed_squared))
             else:
-                cruise_speed = current_v
+                cruise_speed = max(current_v, v_target)
             
             accel_distance = (cruise_speed ** 2 - current_v ** 2) / (2 * a) if cruise_speed > current_v else 0
-            decel_distance = (cruise_speed ** 2) / (2 * a)
+            decel_distance = (cruise_speed ** 2 - v_target ** 2) / (2 * a)
             cruise_distance = distance - accel_distance - decel_distance
             
             # 修正可能的数值误差
@@ -196,6 +217,7 @@ class HeuristicLowLevelController:
         
         return {
             'target_position': target_position,
+            'target_speed': v_target,
             'cruise_speed': cruise_speed,
             'accel_distance': accel_distance,
             'cruise_distance': cruise_distance,
@@ -273,21 +295,41 @@ class HeuristicLowLevelController:
         
         elif plan['phase'] == 'decel':
             # 减速阶段
+            v_target = plan.get('target_speed', 0.0)
+            
             # 检查是否已经很接近目标
             if current_distance <= 1.0:  # tolerance
-                if vehicle.velocity > 0.5:
-                    return 0  # 继续减速
+                # 检查速度是否接近目标速度
+                if vehicle.velocity > v_target + 0.1:
+                    return 0  # 继续减速到目标速度
                 elif vehicle.is_aligned_with(plan['target_position']):
                     plan['phase'] = 'aligned'
-                    return 1  # 已对齐，保持
+                    return 1  # 已对齐（位置+速度），保持
                 else:
-                    return 0 if vehicle.velocity > 0 else 1
+                    # 位置接近但未对齐
+                    # 检查是位置不够精确还是速度太快
+                    position_dist = min(
+                        vehicle.distance_to(plan['target_position']),
+                        TRACK_LENGTH - vehicle.distance_to(plan['target_position'])
+                    )
+                    
+                    if position_dist <= 1.0 and vehicle.velocity > SPEED_TOLERANCE:
+                        # 位置对齐但速度太快，继续减速
+                        return 0
+                    elif position_dist > 1.0 and vehicle.velocity <= SPEED_TOLERANCE:
+                        # 速度已经很低但位置不准确，触发重新规划
+                        # 通过在下一次update时重新检测来触发
+                        return 1  # 暂时保持，等待下一次重新规划
+                    else:
+                        # 位置和速度都不满足，继续减速
+                        return 0 if vehicle.velocity > v_target else 1
             else:
                 # 还没到目标，继续减速
-                if vehicle.velocity > 0:
+                if vehicle.velocity > v_target + 0.1:
                     return 0  # 减速
                 else:
-                    # 速度已经为0但还没到目标，可能需要重新规划
+                    # 速度已经降到目标速度但还没到目标位置
+                    # 保持当前速度，继续靠近目标
                     return 1  # 保持
         
         return 1  # 默认保持
@@ -297,9 +339,15 @@ class HeuristicLowLevelController:
         if plan['phase'] == 'aligned':
             return
         
+        # 获取目标速度
+        v_target = plan.get('target_speed', 0.0)
+        
         # 检查是否应该进入减速阶段
-        # 计算从当前速度减速到0需要的距离
-        decel_needed = (vehicle.velocity ** 2) / (2 * MAX_ACCELERATION) if vehicle.velocity > 0 else 0
+        # 计算从当前速度减速到目标速度需要的距离
+        if vehicle.velocity > v_target:
+            decel_needed = (vehicle.velocity ** 2 - v_target ** 2) / (2 * MAX_ACCELERATION)
+        else:
+            decel_needed = 0
         decel_needed += 1.0  # 安全余量
         
         if current_distance <= decel_needed:

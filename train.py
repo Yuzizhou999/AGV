@@ -412,7 +412,7 @@ def main():
     manager = TrainingManager(
         num_episodes=NUM_EPISODES, 
         use_gpu=use_gpu,
-        enable_visualization=True,
+        enable_visualization=False,
         vis_update_interval=args.vis_interval
     )
     

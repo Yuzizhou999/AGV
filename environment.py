@@ -86,12 +86,25 @@ class Vehicle:
         return direct
     
     def is_aligned_with(self, station_position: float, tolerance: float = 1.0) -> bool:
-        """判断是否与某工位对齐（考虑双向距离）"""
+        """判断是否与某工位对齐（考虑双向距离和速度限制）
+        
+        Args:
+            station_position: 工位位置
+            tolerance: 位置容差
+        
+        Returns:
+            bool: 是否对齐（位置对齐且速度足够低）
+        """
         # 计算双向距离，取最小值
         forward_dist = self.distance_to(station_position)  # 顺时针距离
         backward_dist = TRACK_LENGTH - forward_dist  # 逆时针距离
         min_dist = min(forward_dist, backward_dist)
-        return min_dist <= tolerance
+        
+        # 位置对齐且速度低于容差
+        position_aligned = min_dist <= tolerance
+        speed_ok = abs(self.velocity) <= SPEED_TOLERANCE
+        
+        return position_aligned and speed_ok
 
 
 class LoadingStation:
