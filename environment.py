@@ -287,11 +287,8 @@ class Environment:
         assigned_ids = self._execute_high_level_action(high_level_action)
         
         # 处理上料和下料操作（需要在位置更新后执行）
-        picked_up_ids = self._process_loading_operations()
-        self._process_unloading_operations()
-        
-        # 检查完成情况
-        completed_ids = self._check_completions()
+        picked_up_ids = self._process_loading_operations()   
+        completed_ids = self._process_unloading_operations()
         
         # 计算奖励
         reward = self._calculate_reward(completed_ids, picked_up_ids, assigned_ids)
@@ -346,10 +343,6 @@ class Environment:
         
         for other_id, other_vehicle in self.vehicles.items():
             if other_id == vehicle_id:
-                continue
-            
-            # 如果另一辆车正在上下料（被锁定不动），跳过安全距离检查
-            if other_vehicle.is_loading_unloading:
                 continue
             
             # 计算距离（沿行驶方向）
@@ -506,8 +499,12 @@ class Environment:
         
         return picked_up_ids
     
-    def _process_unloading_operations(self):
-        """处理下料操作：检查车辆是否对齐下料口，执行下料"""
+    def _process_unloading_operations(self) -> List[int]:
+        """处理下料操作：检查车辆是否对齐下料口，执行下料
+
+        Returns:
+            List[int]: 本次完成卸货的货物ID列表
+        """
         completed_cargo_ids = []  # 记录本轮完成的货物ID（因为会被删除）
         
         for vehicle_id, vehicle in self.vehicles.items():
@@ -613,16 +610,7 @@ class Environment:
                 if not has_unloading and not has_loading:
                     vehicle.is_loading_unloading = False
 
-    def _check_completions(self) -> List[int]:
-        """检查是否有货物完成（返回本步完成的货物ID列表）
-        注意：由于货物在下料完成时就被从self.cargos中删除，这个函数现在主要用于兼容性
-        """
-        completed_ids = []
-        
-        # 由于货物完成后立即从cargos中删除，这里不需要再次检查
-        # 保留这个函数是为了代码兼容性
-        
-        return completed_ids
+        return completed_cargo_ids
     
     def _check_timeouts(self):
         """统计超时货物数量"""

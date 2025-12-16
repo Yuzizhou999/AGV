@@ -411,25 +411,5 @@ class HeuristicLowLevelController:
         else:  # action == 2
             new_velocity = min(MAX_SPEED, vehicle.velocity + MAX_ACCELERATION * LOW_LEVEL_CONTROL_INTERVAL)
         
-        # 计算新位置
-        new_position = (vehicle.position + new_velocity * LOW_LEVEL_CONTROL_INTERVAL) % TRACK_LENGTH
-        
-        # 检查与其他车辆的距离
-        for other_id, other_vehicle in self.env.vehicles.items():
-            if other_id == vehicle_id:
-                continue
-            
-            # 跳过正在上下料的车辆
-            if other_vehicle.is_loading_unloading:
-                continue
-            
-            # 计算距离（沿行驶方向）
-            if new_position < other_vehicle.position:
-                distance = other_vehicle.position - new_position
-            else:
-                distance = TRACK_LENGTH - new_position + other_vehicle.position
-            
-            if distance < SAFETY_DISTANCE:
-                return True
-        
-        return False
+        # 复用环境的安全距离检测逻辑，避免双份实现出现不一致
+        return not self.env._check_safety_distance(vehicle_id, new_velocity)
