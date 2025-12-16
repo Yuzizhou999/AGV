@@ -312,13 +312,14 @@ class Environment:
                 continue
             
             # action: 0=减速, 1=保持, 2=加速
+            # 轨道坐标定义为沿顺时针方向，速度不允许为负（不支持反向行驶）
             if action == 0:
-                new_velocity = max(-MAX_SPEED, vehicle.velocity - MAX_ACCELERATION * LOW_LEVEL_CONTROL_INTERVAL)
+                new_velocity = max(0.0, vehicle.velocity - MAX_ACCELERATION * LOW_LEVEL_CONTROL_INTERVAL)
             elif action == 1:
                 new_velocity = vehicle.velocity
             else:  # action == 2
                 new_velocity = min(MAX_SPEED, vehicle.velocity + MAX_ACCELERATION * LOW_LEVEL_CONTROL_INTERVAL)
-            
+
             # 检查安全距离约束
             if not self._check_safety_distance(vehicle_id, new_velocity):
                 new_velocity = 0.0  # 强制停止
@@ -438,6 +439,8 @@ class Environment:
                 # 对齐了，开始上料计时
                 cargo.loading_start_time = self.current_time
                 cargo.picked_up_time = self.current_time  # 记录被取走的时间
+                # 统计等待时间（从到达到被取走/开始取料）
+                self.total_wait_time += cargo.wait_time(self.current_time)
                 vehicle.is_loading_unloading = True  # 锁定车辆移动
                 vehicle.velocity = 0.0  # 立即停止车辆
                 

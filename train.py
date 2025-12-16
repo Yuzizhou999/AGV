@@ -9,7 +9,8 @@ import time
 import json
 from datetime import datetime
 import os
-
+# 允许 OpenMP 多次加载运行时库
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 from config import *
 from environment import Environment
 from agent_high_level import HighLevelAgent, HighLevelController
@@ -185,15 +186,22 @@ class TrainingManager:
         # 统计
         completed_count = self.env.completed_cargos
         # 统计完成货物中超时的数量
-        completed_timeout_count = sum(1 for c in self.env.cargos.values()
-                                     if c.completion_time is not None and c.wait_time(c.completion_time) > CARGO_TIMEOUT)
+        # 完成货物在下料完成时会从self.env.cargos中删除，改为从completed_cargo_list统计
+        completed_timeout_count = sum(
+            1 for info in getattr(self.env, 'completed_cargo_list', [])
+            if info.get('wait_time', 0.0) > CARGO_TIMEOUT
+        )
         # 统计等待中超时的数量
         waiting_timeout_count = self.env.timed_out_cargos
         total_cargos = self.env.cargo_counter
-        waiting_cargos = sum(1 for c in self.env.cargos.values() 
-                           if c.completion_time is None and c.current_location.startswith("IP_"))
-        on_vehicle_cargos = sum(1 for c in self.env.cargos.values()
-                               if c.completion_time is None and c.current_location.startswith("vehicle_"))
+        waiting_cargos = sum(
+            1 for c in self.env.cargos.values() 
+            if c.completion_time is None and c.current_location.startswith("IP_") and c.picked_up_time is None
+            )
+        on_vehicle_cargos = sum(
+            1 for c in self.env.cargos.values()
+            if c.completion_time is None and c.current_location.startswith("vehicle_")
+            )
         avg_wait_time = self.env.total_wait_time / max(1, self.env.cargo_counter)
         
         # 在episode结束后衰减探索率（只针对高层智能体）

@@ -186,6 +186,7 @@ class HighLevelController:
                     cargo = self.env.cargos[cargo_id]
                     if cargo.target_unloading_station is None:
                         for unload_station_id in cargo.allowed_unloading_stations:
+                            # TODO: 选择合适的下料工位（这里简单选择第0个）
                             slot_to_use = 0
                             available_actions.append({
                                 'type': 'assign_unloading',
