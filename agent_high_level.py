@@ -117,8 +117,17 @@ class HighLevelAgent:
         self.steps = 0
         self.last_vehicle_actions = None  # [num_loading_slots] 每个上料工位选择的车辆
         self.last_unloading_actions = None  # [num_loading_slots] 每个上料工位选择的下料工位
-    
-    def select_action(self, observation: np.ndarray) -> Tuple[List[int], List[int]]:
+        # 用于训练时的 action masking（存当前决策时刻的mask）
+        self.last_vehicle_mask: Optional[np.ndarray] = None   # [num_slots, num_vehicles+1] bool
+        self.last_unloading_mask: Optional[np.ndarray] = None # [num_slots, num_unloading_slots] bool
+
+    def select_action(
+        self,
+        observation: np.ndarray,
+        vehicle_mask: Optional[np.ndarray] = None,
+        unloading_mask: Optional[np.ndarray] = None,
+        slot_order: Optional[List[int]] = None
+    ) -> Tuple[List[int], List[int]]:
         """
         选择动作（ε-贪心策略）- 为每个上料工位选择车辆和下料工位
         
@@ -138,30 +147,95 @@ class HighLevelAgent:
             # vehicle_q: [1, num_loading_slots, num_vehicles + 1]
             # unloading_q: [1, num_loading_slots, num_unloading_stations * 2]
         
-        vehicle_actions = []
-        unloading_actions = []
-        
-        for i in range(self.num_loading_slots):
-            if np.random.random() < self.epsilon:
-                # 探索：随机选择
-                vehicle_action = np.random.randint(0, self.num_vehicles + 1)
-                unloading_action = np.random.randint(0, self.num_unloading_stations * 2)
-            else:
-                # 利用：选择最大Q值
-                vehicle_action = vehicle_q[0, i, :].argmax().item()
-                unloading_action = unloading_q[0, i, :].argmax().item()
-            
-            vehicle_actions.append(vehicle_action)
-            unloading_actions.append(unloading_action)
+        # --------- 兼容：未提供mask则保持旧逻辑（不建议训练时继续用） ---------
+        if vehicle_mask is None or unloading_mask is None:
+            vehicle_actions = []
+            unloading_actions = []
+            for i in range(self.num_loading_slots):
+                if np.random.random() < self.epsilon:
+                    vehicle_action = np.random.randint(0, self.num_vehicles + 1)
+                    unloading_action = np.random.randint(0, self.num_unloading_stations * 2)
+                else:
+                    vehicle_action = vehicle_q[0, i, :].argmax().item()
+                    unloading_action = unloading_q[0, i, :].argmax().item()
+                vehicle_actions.append(int(vehicle_action))
+                unloading_actions.append(int(unloading_action))
+            self.last_vehicle_mask = None
+            self.last_unloading_mask = None
+        else:
+            # --------- Masked ε-greedy + 同周期冲突消解 ---------
+            if slot_order is None:
+                slot_order = list(range(self.num_loading_slots))
+
+            vehicle_actions = [0] * self.num_loading_slots
+            unloading_actions = [0] * self.num_loading_slots
+
+            used_vehicle_ids = set()     # vehicle_id（0-based）
+            used_unloading_idx = set()   # unloading_action 全局索引（0..num_unloading_stations*2-1）
+
+            for i in slot_order:
+                # 1) 车选择：剔除本周期已用车
+                v_mask = vehicle_mask[i].copy()
+                for vid in used_vehicle_ids:
+                    a = vid + 1  # action=vehicle_id+1
+                    if 0 <= a < v_mask.shape[0]:
+                        v_mask[a] = False
+                # 至少允许“不操作”
+                v_mask[0] = True
+
+                if np.random.random() < self.epsilon:
+                    valid_vs = np.flatnonzero(v_mask)
+                    v_act = int(np.random.choice(valid_vs))
+                else:
+                    qv = vehicle_q[0, i, :].detach().cpu().numpy()
+                    qv[~v_mask] = -1e9
+                    v_act = int(qv.argmax())
+
+                if v_act == 0:
+                    vehicle_actions[i] = 0
+                    unloading_actions[i] = 0
+                    continue
+
+                # 2) OP选择：剔除本周期已用OP工位
+                u_mask = unloading_mask[i].copy()
+                for ui in used_unloading_idx:
+                    if 0 <= ui < u_mask.shape[0]:
+                        u_mask[ui] = False
+
+                if not u_mask.any():
+                    # 没有可用卸货位：本slot直接不派单，避免“派车无处卸”
+                    vehicle_actions[i] = 0
+                    unloading_actions[i] = 0
+                    continue
+
+                if np.random.random() < self.epsilon:
+                    valid_us = np.flatnonzero(u_mask)
+                    u_act = int(np.random.choice(valid_us))
+                else:
+                    qu = unloading_q[0, i, :].detach().cpu().numpy()
+                    qu[~u_mask] = -1e9
+                    u_act = int(qu.argmax())
+
+                vehicle_actions[i] = v_act
+                unloading_actions[i] = u_act
+
+                used_vehicle_ids.add(v_act - 1)
+                used_unloading_idx.add(u_act)
+
+            self.last_vehicle_mask = vehicle_mask
+            self.last_unloading_mask = unloading_mask
         
         self.last_vehicle_actions = vehicle_actions
         self.last_unloading_actions = unloading_actions
         return vehicle_actions, unloading_actions
     
     def store_transition(self, state: np.ndarray, vehicle_actions: List[int], unloading_actions: List[int],
-                        reward: float, next_state: np.ndarray, done: bool):
+                        reward: float, next_state: np.ndarray, done: bool,
+                        next_vehicle_mask: Optional[np.ndarray] = None,
+                        next_unloading_mask: Optional[np.ndarray] = None):
         """存储过渡"""
-        self.memory.append((state, vehicle_actions, unloading_actions, reward, next_state, done))
+        self.memory.append((state, vehicle_actions, unloading_actions, reward, next_state, done,
++                            next_vehicle_mask, next_unloading_mask))
     
     def train(self, batch_size: int = BATCH_SIZE):
         """训练网络 - 基于固定状态空间的优化"""
@@ -169,8 +243,13 @@ class HighLevelAgent:
             return None
         
         batch = random.sample(self.memory, batch_size)
-        states, vehicle_actions, unloading_actions, rewards, next_states, dones = zip(*batch)
-        
+        if len(batch[0]) == 6:
+            states, vehicle_actions, unloading_actions, rewards, next_states, dones = zip(*batch)
+            next_vehicle_masks = None
+            next_unloading_masks = None
+        else:
+            states, vehicle_actions, unloading_actions, rewards, next_states, dones, next_vehicle_masks, next_unloading_masks = zip(*batch)
+   
         states = torch.FloatTensor(np.array(states)).to(self.device)
         vehicle_actions = torch.LongTensor(vehicle_actions).to(self.device)  # [batch, num_loading_slots]
         unloading_actions = torch.LongTensor(unloading_actions).to(self.device)  # [batch, num_loading_slots]
@@ -190,6 +269,12 @@ class HighLevelAgent:
         
         with torch.no_grad():
             next_vehicle_q, next_unloading_q = self.target_network(next_states)
+            if next_vehicle_masks is not None and next_unloading_masks is not None:
+                nvm = torch.BoolTensor(np.array(next_vehicle_masks)).to(self.device)
+                num = torch.BoolTensor(np.array(next_unloading_masks)).to(self.device)
+                next_vehicle_q = next_vehicle_q.masked_fill(~nvm, -1e9)
+                next_unloading_q = next_unloading_q.masked_fill(~num, -1e9)
+                
             max_next_vehicle_q = next_vehicle_q.max(dim=2)[0]
             max_next_unloading_q = next_unloading_q.max(dim=2)[0]
             
@@ -242,12 +327,82 @@ class HighLevelController:
         state_vector = self._extract_state_vector(observation)
         
         # 为每个上料工位选择车辆和下料工位
-        vehicle_actions, unloading_actions = self.agent.select_action(state_vector)
+        vehicle_mask, unloading_mask, slot_order = self._build_action_masks_and_order(observation)
+        vehicle_actions, unloading_actions = self.agent.select_action(
+            state_vector, vehicle_mask, unloading_mask, slot_order
+        )
         
         # 解码动作为具体的任务分配
         task_assignments = self._decode_actions(observation, vehicle_actions, unloading_actions)
         
         return task_assignments
+    
+    def _build_action_masks_and_order(self, observation: Dict) -> Tuple[np.ndarray, np.ndarray, List[int]]:
+        """
+        为每个上料工位构建：
+        - vehicle_mask: [num_slots, num_vehicles+1] (action=0 代表不操作)
+        - unloading_mask: [num_slots, num_unloading_stations*2] (每个OP 2个工位)
+        - slot_order: 超时优先，其次等待时间长优先
+        """
+        num_slots = self.agent.num_loading_slots
+        v_mask = np.zeros((num_slots, self.agent.num_vehicles + 1), dtype=bool)
+        u_mask = np.zeros((num_slots, self.agent.num_unloading_stations * 2), dtype=bool)
+
+        # 为避免“全False”导致采样/argmax异常：给卸货头一个兜底动作（仅在 vehicle_action==0 时会被用到）
+        u_mask[:, 0] = True
+
+        waiting = observation.get('waiting_cargos', [])
+        cargo_info = {c['id']: c for c in waiting}
+
+        slot_meta = []  # (slot_idx, has_cargo, is_timeout, wait_time)
+        slot_idx = 0
+        for _, station in self.env.loading_stations.items():
+            for cargo_slot_idx in range(2):
+                cargo_id = station.slots[cargo_slot_idx]
+
+                # 不操作永远合法
+                v_mask[slot_idx, 0] = True
+
+                if cargo_id is None:
+                    slot_meta.append((slot_idx, 0, 0, 0.0))
+                    slot_idx += 1
+                    continue
+
+                # 车辆合法性：有空位 + 空位不在装卸 + 且未已有 assigned_task（避免覆盖）:contentReference[oaicite:6]{index=6}
+                for vid, veh in self.env.vehicles.items():
+                    if veh.assigned_task is not None:
+                        continue
+                    empty_si = veh.get_empty_slot_idx()
+                    if empty_si is None:
+                        continue
+                    if veh.slot_operation_end_time[empty_si] > 0:
+                        continue
+                    v_mask[slot_idx, vid + 1] = True
+
+                # OP合法性：必须在 cargo.allowed_unloading_stations，且对应工位未reserved，且未占用
+                cargo = self.env.cargos.get(cargo_id)
+                if cargo is not None:
+                    for op_id in cargo.allowed_unloading_stations:
+                        op = self.env.unloading_stations.get(op_id)
+                        if op is None:
+                            continue
+                        for us in range(2):
+                            if op.slot_reserved[us]:
+                                continue
+                            if op.slots[us] is not None:
+                                continue
+                            u_mask[slot_idx, op_id * 2 + us] = True
+
+                info = cargo_info.get(cargo_id, {})
+                wt = float(info.get('wait_time', 0.0))
+                to = 1 if bool(info.get('is_timeout', False)) else 0
+                slot_meta.append((slot_idx, 1, to, wt))
+                slot_idx += 1
+
+        # 排序：has_cargo(1优先) -> is_timeout(1优先) -> wait_time(大优先)
+        slot_meta.sort(key=lambda x: (-x[1], -x[2], -x[3]))
+        slot_order = [x[0] for x in slot_meta]
+        return v_mask, u_mask, slot_order
     
     def _extract_state_vector(self, observation: Dict) -> np.ndarray:
         """
@@ -297,7 +452,8 @@ class HighLevelController:
             vehicle_pos = vehicle_obs.get('position', 0.0) * TRACK_LENGTH
             for station_obs in observation.get('loading_stations', []):
                 station_pos = station_obs.get('position', 0.0) * TRACK_LENGTH
-                dist = abs(vehicle_pos - station_pos) / TRACK_LENGTH
+                d = (station_pos - vehicle_pos) % TRACK_LENGTH
+                dist = min(d, TRACK_LENGTH - d) / TRACK_LENGTH
                 min_dist = min(min_dist, dist)
             features.append(min_dist)
         
@@ -329,6 +485,8 @@ class HighLevelController:
             List[Dict]: 任务分配列表
         """
         assignments = []
+        used_vehicle_ids = set()
+        used_unloading_slots = set()  # (op_id, slot)
         
         # 遍历每个上料工位
         slot_idx = 0
@@ -357,6 +515,11 @@ class HighLevelController:
                 # 检查车辆是否可用
                 vehicle = self.env.vehicles.get(vehicle_id)
                 if vehicle is None:
+                    continue
+                # 同周期同车只能接1单；且已有任务的不再接新单（避免覆盖 assigned_task）
+                if vehicle_id in used_vehicle_ids:
+                    continue
+                if vehicle.assigned_task is not None:
                     continue
                 
                 # 找到车辆的空工位
@@ -389,7 +552,11 @@ class HighLevelController:
                 if unloading_station is None:
                     continue
                 
+                if (unloading_station_id, unloading_slot_idx) in used_unloading_slots:
+                    continue
                 if unloading_station.slot_reserved[unloading_slot_idx]:
+                    continue
+                if unloading_station.slots[unloading_slot_idx] is not None:
                     continue
                 
                 # 生成任务分配
@@ -401,5 +568,7 @@ class HighLevelController:
                     'unloading_station_id': unloading_station_id,
                     'unloading_slot_idx': unloading_slot_idx
                 })
+                used_vehicle_ids.add(vehicle_id)
+                used_unloading_slots.add((unloading_station_id, unloading_slot_idx))
         
         return assignments

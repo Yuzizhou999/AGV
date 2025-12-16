@@ -83,13 +83,17 @@ class TrainingManager:
                 # 存储转移（如果有上一步，使用累积的步奖励）
                 if last_high_level_state is not None and last_high_level_actions is not None:
                     vehicle_actions, unloading_actions = last_high_level_actions
+                    next_vehicle_mask = self.high_level_controller.agent.last_vehicle_mask
+                    next_unloading_mask = self.high_level_controller.agent.last_unloading_mask
                     self.high_level_agent.store_transition(
                         last_high_level_state,
                         vehicle_actions,
                         unloading_actions,
                         step_reward_buffer,  # 使用累积的步奖励
                         current_state,
-                        False
+                        False,
+                        next_vehicle_mask=next_vehicle_mask,
+                        next_unloading_mask=next_unloading_mask
                     )
                     step_reward_buffer = 0.0  # 重置缓冲
                 
@@ -115,23 +119,22 @@ class TrainingManager:
                 high_loss = self.high_level_agent.train(batch_size=BATCH_SIZE)
                 # 不再训练低层智能体，因为使用规则控制
             
-            # 打印进度
-            if step_count % 200 == 0:
-                progress = self.env.current_time / EPISODE_DURATION * 100
-                print(f"    Episode进度: {progress:.1f}% | 步数: {step_count} | 货物: {len(self.env.cargos)} | 完成: {self.env.completed_cargos}", flush=True)
             
             if done:
                 # 存储最后一步
                 if last_high_level_state is not None and last_high_level_actions is not None:
                     final_state = self.high_level_controller._extract_state_vector(obs)
                     vehicle_actions, unloading_actions = last_high_level_actions
+                    final_vehicle_mask, final_unloading_mask, _ = self.high_level_controller._build_action_masks_and_order(obs)
                     self.high_level_agent.store_transition(
                         last_high_level_state,
                         vehicle_actions,
                         unloading_actions,
                         step_reward_buffer,
                         final_state,
-                        True
+                        True,
+                        next_vehicle_mask=final_vehicle_mask,
+                        next_unloading_mask=final_unloading_mask
                     )
                 break
         
