@@ -405,7 +405,7 @@ class HeuristicLowLevelController:
         
         # 计算新速度
         if action == 0:
-            new_velocity = max(-MAX_SPEED, vehicle.velocity - MAX_ACCELERATION * LOW_LEVEL_CONTROL_INTERVAL)
+            new_velocity = max(0.0, vehicle.velocity - MAX_ACCELERATION * LOW_LEVEL_CONTROL_INTERVAL)
         elif action == 1:
             new_velocity = vehicle.velocity
         else:  # action == 2
