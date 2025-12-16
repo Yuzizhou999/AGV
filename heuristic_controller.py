@@ -96,7 +96,10 @@ class HeuristicLowLevelController:
         # 情况3: 速度为0且不在目标位置（可能因安全距离停止）
         elif vehicle.velocity == 0.0 and not vehicle.is_aligned_with(target_position) and not vehicle.is_loading_unloading:
             need_replan = True
-        # 情况4: 已经处于decel或aligned阶段，但检测到未对齐（位置或速度不满足）
+        # 情况4: 路径上有其他车辆正在进行上下料操作
+        elif self._is_blocked_by_loading_vehicle(vehicle_id, target_position):
+            need_replan = True
+        # 情况5: 已经处于decel或aligned阶段，但检测到未对齐（位置或速度不满足）
         elif current_plan['phase'] in ['decel', 'aligned']:
             # 计算当前距离
             current_distance = vehicle.distance_to(target_position)
@@ -108,7 +111,7 @@ class HeuristicLowLevelController:
                     # 未对齐，需要重新规划
                     # 可能是位置不够精确，或者速度太快
                     need_replan = True
-        # 情况5: 已经对齐目标位置
+        # 情况6: 已经对齐目标位置
         elif vehicle.is_aligned_with(target_position):
             # 如果已对齐，标记为aligned阶段
             if current_plan['phase'] != 'aligned':
@@ -389,6 +392,41 @@ class HeuristicLowLevelController:
             if self._will_violate_safety(vehicle_id, 1):
                 return 0  # 减速
             return 1  # 保持
+    
+    def _is_blocked_by_loading_vehicle(self, vehicle_id: int, target_position: float) -> bool:
+        """
+        检查从当前位置到目标位置的路径上是否有其他车辆正在进行上下料操作
+        
+        Args:
+            vehicle_id: 当前车辆ID
+            target_position: 目标位置
+        
+        Returns:
+            bool: 如果路径上有车辆在上下料则返回True
+        """
+        vehicle = self.env.vehicles[vehicle_id]
+        
+        # 计算到目标的距离（顺时针方向）
+        distance_to_target = vehicle.distance_to(target_position)
+        
+        # 检查其他车辆
+        for other_id, other_vehicle in self.env.vehicles.items():
+            if other_id == vehicle_id:
+                continue
+            
+            # 只关心正在进行上下料的车辆
+            if not other_vehicle.is_loading_unloading:
+                continue
+            
+            # 检查该车辆是否在当前车辆到目标的路径上
+            # 计算当前车辆到其他车辆的距离（顺时针方向）
+            distance_to_other = vehicle.distance_to(other_vehicle.position)
+            
+            # 如果其他车辆在路径上（距离小于到目标的距离），则被堵住
+            if distance_to_other < distance_to_target:
+                return True
+        
+        return False
     
     def _will_violate_safety(self, vehicle_id: int, action: int) -> bool:
         """
