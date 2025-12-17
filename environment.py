@@ -60,12 +60,15 @@ class Vehicle:
     slots: List[Optional[int]]  # 两个工位上的货物ID (None表示空)
     slot_operation_end_time: List[float]  # 每个工位的操作结束时间
     is_loading_unloading: bool = False  # 是否正在进行上料/下料操作（锁定移动）
+    assigned_tasks: List[Dict] = None  # 任务队列：记录高层分配的任务
     
     def __post_init__(self):
         if len(self.slots) != 2:
             self.slots = [None, None]
         if len(self.slot_operation_end_time) != 2:
             self.slot_operation_end_time = [0.0, 0.0]
+        if self.assigned_tasks is None:
+            self.assigned_tasks = []
     
     def has_empty_slot(self) -> bool:
         """是否有空工位"""
@@ -314,7 +317,7 @@ class Environment:
             # action: 0=减速, 1=保持, 2=加速
             # 轨道坐标定义为沿顺时针方向，速度不允许为负（不支持反向行驶）
             if action == 0:
-                new_velocity = max(0.0, vehicle.velocity - MAX_ACCELERATION * LOW_LEVEL_CONTROL_INTERVAL)
+                new_velocity = max(0, vehicle.velocity - MAX_ACCELERATION * LOW_LEVEL_CONTROL_INTERVAL)
             elif action == 1:
                 new_velocity = vehicle.velocity
             else:  # action == 2
@@ -396,15 +399,55 @@ class Environment:
                     self.unloading_stations[unloading_station_id].has_empty_slot()):
                     cargo.target_unloading_station = unloading_station_id
                     cargo.target_slot = slot_idx
+                    
+                    # 在车辆任务队列中添加下料任务
+                    if cargo.assigned_vehicle is not None:
+                        vehicle = self.vehicles[cargo.assigned_vehicle]
+                        unloading_station = self.unloading_stations[unloading_station_id]
+                        task = {
+                            'type': 'unloading',
+                            'cargo_id': cargo_id,
+                            'target_position': unloading_station.position,
+                            'station_id': unloading_station_id,
+                            'slot_idx': slot_idx
+                        }
+                        
+                        # 避免重复添加任务
+                        task_exists = any(
+                            t['type'] == 'unloading' and t['cargo_id'] == cargo_id 
+                            for t in vehicle.assigned_tasks
+                        )
+                        if not task_exists:
+                            vehicle.assigned_tasks.append(task)
         
         return assigned_ids
     
     def _assign_loading_task(self, cargo_id: int, vehicle_id: int, slot_idx: int):
         """分配上料任务（只标记任务，实际上料在车辆对齐时执行）"""
         cargo = self.cargos[cargo_id]
-        # 标记任务分配
+        vehicle = self.vehicles[vehicle_id]
+        
+        # 标记货物任务分配
         cargo.assigned_vehicle = vehicle_id
         cargo.assigned_vehicle_slot = slot_idx
+        
+        # 在车辆任务队列中添加上料任务
+        loading_station = self.loading_stations[cargo.loading_station]
+        task = {
+            'type': 'loading',
+            'cargo_id': cargo_id,
+            'target_position': loading_station.position,
+            'station_id': cargo.loading_station,
+            'slot_idx': slot_idx
+        }
+        
+        # 避免重复添加任务
+        task_exists = any(
+            t['type'] == 'loading' and t['cargo_id'] == cargo_id 
+            for t in vehicle.assigned_tasks
+        )
+        if not task_exists:
+            vehicle.assigned_tasks.append(task)
     
     def _process_loading_operations(self):
         """处理上料操作：检查车辆是否对齐上料口，执行上料
@@ -439,8 +482,6 @@ class Environment:
                 # 对齐了，开始上料计时
                 cargo.loading_start_time = self.current_time
                 cargo.picked_up_time = self.current_time  # 记录被取走的时间
-                # 统计等待时间（从到达到被取走/开始取料）
-                self.total_wait_time += cargo.wait_time(self.current_time)
                 vehicle.is_loading_unloading = True  # 锁定车辆移动
                 vehicle.velocity = 0.0  # 立即停止车辆
                 
@@ -492,6 +533,12 @@ class Environment:
                 cargo.loading_start_time = None
                 # 注意：不在这里解除锁定，统一在函数最后处理
                 picked_up_ids.append(cargo.id)  # 记录完成取货的货物
+                
+                # 从车辆任务队列中移除上料任务
+                vehicle.assigned_tasks = [
+                    t for t in vehicle.assigned_tasks 
+                    if not (t['type'] == 'loading' and t['cargo_id'] == cargo.id)
+                ]
         
         # 统一检查所有车辆：如果没有任何货物正在上料或下料，则解除锁定
         for vehicle in self.vehicles.values():
@@ -596,6 +643,9 @@ class Environment:
                     cargo.unloading_start_time = None
                     self.completed_cargos += 1
                     
+                    # 累加总等待时间
+                    self.total_wait_time += cargo.wait_time(self.current_time)
+                    
                     # 保存已完成货物的详细信息
                     completed_info = {
                         'id': cargo.id,
@@ -614,6 +664,12 @@ class Environment:
                     # 注意：不在这里解除锁定，统一在函数最后处理
                     # 记录已完成的货物ID
                     completed_cargo_ids.append(cargo_id)
+                    
+                    # 从车辆任务队列中移除下料任务
+                    vehicle.assigned_tasks = [
+                        t for t in vehicle.assigned_tasks 
+                        if not (t['type'] == 'unloading' and t['cargo_id'] == cargo_id)
+                    ]
         
         # 删除已完成的货物（在遍历后删除，避免遍历时修改字典）
         for cargo_id in completed_cargo_ids:
@@ -665,14 +721,36 @@ class Environment:
         """
         reward = 0.0
         
-        # 完成卸货奖励
-        reward += len(completed_ids) * REWARD_DELIVERY
+        # 完成卸货奖励(需要检查是否超时完成,并根据等待时间分级奖励)
+        for cargo_id in completed_ids:
+            # 从completed_cargo_list中获取刚完成的货物信息
+            completed_cargo = next((c for c in self.completed_cargo_list if c['id'] == cargo_id), None)
+            if completed_cargo:
+                wait_time = completed_cargo['wait_time']
+                if wait_time > CARGO_TIMEOUT:
+                    # 超时完成:给予净惩罚(改进:从+1.0变为-8.0)
+                    reward += REWARD_DELIVERY * 0.1  # 只给10%的完成奖励
+                    reward += REWARD_TIMEOUT_PENALTY * 2  # 加倍超时惩罚
+                elif wait_time < CARGO_TIMEOUT * 0.5:
+                    # 快速完成(少于150秒):给予额外奖励
+                    reward += REWARD_DELIVERY * 1.2  # 120%奖励
+                else:
+                    # 正常完成(150-300秒):给予完整奖励
+                    reward += REWARD_DELIVERY
         
-        # 完成取货奖励
-        reward += len(picked_up_ids) * REWARD_PICKUP
+        # 完成取货奖励(优先取超时货物给予额外奖励)
+        for cargo_id in picked_up_ids:
+            cargo = self.cargos.get(cargo_id)
+            if cargo:
+                wait_time = cargo.wait_time(self.current_time)
+                if wait_time > CARGO_TIMEOUT:
+                    # 取货的是超时货物,给予额外奖励
+                    reward += REWARD_PICKUP * 1.5  # 150%取货奖励
+                else:
+                    reward += REWARD_PICKUP
         
-        # 分配货物奖励
-        reward += len(assigned_ids) * REWARD_ASSIGNMENT
+        # 分配货物奖励(降低以避免过度分配)
+        reward += len(assigned_ids) * REWARD_ASSIGNMENT * 0.5
         
         # 等待惩罚（针对在上料口等待的货物）
         for cargo in self.cargos.values():
@@ -686,6 +764,11 @@ class Environment:
         
         # 持有货物惩罚（针对车上的货物，鼓励快速卸货）
         for vehicle in self.vehicles.values():
+            # 车辆利用率奖励:如果两个工位都有货物,给予额外奖励
+            occupied_slots = sum(1 for slot in vehicle.slots if slot is not None)
+            if occupied_slots == 2:
+                reward += 0.5 * LOW_LEVEL_CONTROL_INTERVAL  # 每步+0.5的利用率奖励
+            
             for cargo_id in vehicle.slots:
                 if cargo_id is not None:
                     cargo = self.cargos[cargo_id]

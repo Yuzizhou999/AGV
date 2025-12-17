@@ -110,7 +110,14 @@ class HighLevelAgent:
 
 
 class HighLevelController:
-    """高层控制器：决策组件"""
+    """高层控制器：决策组件
+    
+    负责任务分配决策，并维护车辆任务队列：
+    - 分配上料任务时，将任务加入车辆的 assigned_tasks 队列
+    - 分配下料目标时，将任务加入车辆的 assigned_tasks 队列
+    - 低层控制器从队列中读取任务，规划运动路径
+    - 任务完成后自动从队列移除，实现闭环控制
+    """
     
     def __init__(self, agent: HighLevelAgent, env):
         self.agent = agent
