@@ -35,7 +35,8 @@ class LowLevelAgent:
     def __init__(self, obs_dim: int, action_dim: int, device='cpu'):
         self.device = device
         self.obs_dim = obs_dim
-        self.action_dim = action_dim  # 3: {减速, 保持, 加速}
+        self.action_dim = action_dim  # 3种动作: {0:减速, 1:保持速度, 2:加速}
+        # 每个动作对应的加速度变化为 ±MAX_ACCELERATION * LOW_LEVEL_CONTROL_INTERVAL
         
         # 神经网络
         self.q_network = LowLevelNetwork(obs_dim, action_dim).to(device)

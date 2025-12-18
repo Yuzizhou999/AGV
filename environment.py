@@ -341,21 +341,52 @@ class Environment:
                         vehicle.slot_operation_end_time[i] = 0
     
     def _check_safety_distance(self, vehicle_id: int, new_velocity: float) -> bool:
-        """检查是否满足安全距离约束"""
+        """检查是否满足安全距离约束
+        
+        考虑其他车辆可能的加速/减速情况，检查最坏情况下的距离。
+        
+        Args:
+            vehicle_id: 要检查的车辆ID
+            new_velocity: 车辆新的速度
+        
+        Returns:
+            bool: 如果满足安全距离约束返回True，否则返回False
+        """
         vehicle = self.vehicles[vehicle_id]
+        # 本车在下一时间步的位置
         new_position = self._normalize_position(vehicle.position + new_velocity * LOW_LEVEL_CONTROL_INTERVAL)
         
         for other_id, other_vehicle in self.vehicles.items():
             if other_id == vehicle_id:
                 continue
             
-            # 计算距离（沿行驶方向）
-            if new_position < other_vehicle.position:
-                distance = other_vehicle.position - new_position
-            else:
-                distance = TRACK_LENGTH - new_position + other_vehicle.position
+            # 计算其他车辆在下一时间步可能的位置范围
+            # 最坏情况1：其他车以最大加速度加速
+            other_max_velocity = min(MAX_SPEED, other_vehicle.velocity + MAX_ACCELERATION * LOW_LEVEL_CONTROL_INTERVAL)
+            other_max_position = self._normalize_position(other_vehicle.position + other_max_velocity * LOW_LEVEL_CONTROL_INTERVAL)
             
-            if distance < SAFETY_DISTANCE:
+            # 最坏情况2：其他车以最大减速度减速（或维持当前位置）
+            other_min_velocity = max(0, other_vehicle.velocity - MAX_ACCELERATION * LOW_LEVEL_CONTROL_INTERVAL)
+            other_min_position = self._normalize_position(other_vehicle.position + other_min_velocity * LOW_LEVEL_CONTROL_INTERVAL)
+            
+            # 当前其他车的位置（基准）
+            other_current_position = other_vehicle.position
+            
+            # 计算本车到其他车可能位置的最小距离
+            # 考虑三种情况：其他车最大位置、最小位置、当前位置
+            min_distance = float('inf')
+            
+            for other_check_position in [other_current_position, other_max_position, other_min_position]:
+                # 计算沿行驶方向的距离（顺时针）
+                if new_position <= other_check_position:
+                    distance = other_check_position - new_position
+                else:
+                    distance = TRACK_LENGTH - new_position + other_check_position
+                
+                min_distance = min(min_distance, distance)
+            
+            # 检查最坏情况下是否满足安全距离
+            if min_distance < SAFETY_DISTANCE:
                 return False
         
         return True

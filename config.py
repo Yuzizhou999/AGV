@@ -8,7 +8,7 @@ MAX_VEHICLES = 2  # 车辆数量
 MAX_SPEED = 5.0  # 最大速度 (单位/秒)
 MAX_ACCELERATION = 1.0  # 最大加速度
 SAFETY_DISTANCE = 2.0  # 安全距离
-SPEED_TOLERANCE = 0.1  # 对齐判定的速度容差（车辆速度必须低于此值才能开始上下料）
+SPEED_TOLERANCE = 0.1  # 对齐判定的速度容差，车辆速度必须≤此值才能开始上下料
 
 # ========== 上料口配置 ==========
 NUM_LOADING_STATIONS = 2  # 上料口数量
@@ -31,7 +31,7 @@ LOADING_TIME = 15.0  # 单工位上料耗时(秒)，根据project.md要求
 UNLOADING_TIME = 15.0  # 单工位下料耗时(秒)，根据project.md要求
 
 # ========== 仿真配置 ==========
-EPISODE_DURATION = 8 * 3600  # 仿真时长1小时，足够产生有意义的训练数据
+EPISODE_DURATION = 8 * 3600  # 仿真时长8小时，足够产生有意义的训练数据
 HIGH_LEVEL_DECISION_INTERVAL = 1.0  # 高层决策时间间隔(秒)
 LOW_LEVEL_CONTROL_INTERVAL = 0.5  # 低层控制时间间隔(秒)，0.5秒保证控制精度
 
@@ -46,7 +46,7 @@ REWARD_SAFETY_VIOLATION = -50.0  # 安全距离违反惩罚
 REWARD_SPEED_CHANGE_PENALTY = -0.01  # 速度变化惩罚系数，降低
 
 # ========== 神经网络配置 ==========
-HIDDEN_DIM = 256  # 隐层维度，增大以提高表达能力
+HIDDEN_DIM = 256  # 隐层维度，平衡表达能力和计算复杂度
 LEARNING_RATE = 3e-4  # 学习率，适当降低以稳定训练
 BATCH_SIZE = 64  # 批大小，增大以稳定梯度
 GAMMA = 0.99  # 折扣因子
@@ -57,7 +57,7 @@ REPLAY_BUFFER_SIZE = 100000  # 经验回放缓冲区大小
 MIN_REPLAY_SIZE = 1000  # 开始训练前的最小经验数量
 
 # ========== 训练配置 ==========
-NUM_EPISODES = 500  # 训练轮数，500轮足够学习基本策略
+NUM_EPISODES = 500  # 训练轮数
 MAX_STEPS_PER_EPISODE = int(EPISODE_DURATION / LOW_LEVEL_CONTROL_INTERVAL)  # 每轮最大步数
 TRAIN_FREQUENCY = 10  # 每N步训练一次神经网络
 TARGET_UPDATE_FREQUENCY = 100  # 每N步更新目标网络
