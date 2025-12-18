@@ -12,7 +12,7 @@ import os
 
 from config import *
 from environment import Environment
-from agent_high_level import HighLevelAgent, HighLevelController
+from heuristic_high_level import HeuristicHighLevelController
 from agent_low_level import LowLevelAgent, LowLevelController
 
 
@@ -49,24 +49,14 @@ class TrainingManager:
                 print("⚠ 无法导入可视化模块，禁用可视化")
                 self.enable_visualization = False
         
-        # 计算观测维度
-        # 高层观测：需要从环境获取实际维度
-        sample_high_obs = self.env.get_high_level_observation()
-        high_level_obs_dim = len(sample_high_obs)
-        high_level_action_dim = (MAX_VEHICLES * NUM_LOADING_STATIONS * 2) + \
-                               (MAX_VEHICLES * 2 * NUM_UNLOADING_STATIONS * 2)
-        
-        # 低层观测：位置(1) + 速度(1) + 其他车辆距离(n-1) + 目标距离(1)
+        # 初始化低层智能体（用于低层控制）
         sample_low_obs = self.env.get_low_level_observation(0)
         low_level_obs_dim = len(sample_low_obs)
         low_level_action_dim = 3
-        
-        # 初始化智能体
-        self.high_level_agent = HighLevelAgent(high_level_obs_dim, high_level_action_dim, self.device)
         self.low_level_agent = LowLevelAgent(low_level_obs_dim, low_level_action_dim, self.device)
         
-        # 初始化控制器
-        self.high_level_controller = HighLevelController(self.high_level_agent, self.env)
+        # 初始化控制器（使用启发式高层控制器）
+        self.high_level_controller = HeuristicHighLevelController(self.env)
         self.low_level_controller = LowLevelController(self.low_level_agent, self.env)
         
         # 统计信息
@@ -103,82 +93,26 @@ class TrainingManager:
         # 高层决策时间管理
         next_high_level_decision = 0.0
         
-        # 获取初始观测向量
-        high_obs = self.env.get_high_level_observation()
-        # 低层使用启发式控制，不需要观测
-        # low_obs = {v_id: self.env.get_low_level_observation(v_id) for v_id in self.env.vehicles.keys()}
-        
-        # 存储上一步信息
-        prev_high_obs = high_obs
-        prev_high_action = 0
-        # 低层使用启发式控制，不需要存储
-        # prev_low_obs = low_obs.copy()
-        # prev_low_actions = {v_id: 1 for v_id in self.env.vehicles.keys()}  # 默认保持
-        
         while self.env.current_time < EPISODE_DURATION:
             # 高层决策（事件驱动）
             high_level_action = None
-            high_action_idx = 0
             
             if self.env.current_time >= next_high_level_decision:
-                # 获取高层观测
-                high_obs = self.env.get_high_level_observation()
-                
-                # 选择动作
-                high_action_idx = self.high_level_agent.select_action(high_obs)
-                high_level_action = self.high_level_controller._decode_action(high_action_idx, obs)
-                
+                # 使用启发式控制器计算高层动作
+                high_level_action = self.high_level_controller.compute_action(obs)
                 next_high_level_decision = self.env.current_time + HIGH_LEVEL_DECISION_INTERVAL
             
-            # 低层控制（使用启发式控制器替代神经网络）
-            # low_level_actions = {}
-            # for vehicle_id in self.env.vehicles.keys():
-            #     low_obs[vehicle_id] = self.env.get_low_level_observation(vehicle_id)
-            #     action = self.low_level_agent.select_action(low_obs[vehicle_id])
-            #     low_level_actions[vehicle_id] = action
+            # 低层控制（使用启发式控制器）
+            low_level_actions = self.low_level_controller.compute_actions()
             
-            # 执行一步（使用启发式控制器，low_level_actions=None）
-            next_obs, reward, done = self.env.step(high_level_action, low_level_actions=None)
+            # 执行一步
+            next_obs, reward, done = self.env.step(high_level_action, low_level_actions)
             episode_reward += reward
             step_count += 1
             self.total_steps += 1
             
-            # 获取下一步观测（只需要高层观测）
-            next_high_obs = self.env.get_high_level_observation()
-            # next_low_obs = {v_id: self.env.get_low_level_observation(v_id) for v_id in self.env.vehicles.keys()}  # 不需要
-            
-            # 存储高层经验
-            self.high_level_agent.store_transition(
-                prev_high_obs, prev_high_action, reward, next_high_obs, done
-            )
-            
-            # 低层使用启发式控制，不需要训练
-            # （注释掉低层智能体的经验存储）
-            # for vehicle_id in self.env.vehicles.keys():
-            #     self.low_level_agent.store_transition(
-            #         prev_low_obs[vehicle_id], 
-            #         prev_low_actions[vehicle_id],
-            #         reward / len(self.env.vehicles),
-            #         next_low_obs[vehicle_id],
-            #         done
-            #     )
-            
             # 更新上一步信息
-            prev_high_obs = next_high_obs
-            prev_high_action = high_action_idx
-            # prev_low_obs = next_low_obs.copy()  # 不再需要
-            # prev_low_actions = low_level_actions.copy()  # 不再需要
             obs = next_obs
-            
-            # 定期训练智能体（只训练高层智能体）
-            if len(self.high_level_agent.memory) >= MIN_REPLAY_SIZE and step_count % TRAIN_FREQUENCY == 0:
-                self.high_level_agent.train(batch_size=BATCH_SIZE)
-                # self.low_level_agent.train(batch_size=BATCH_SIZE)  # 使用启发式控制，不需要训练
-            
-            # 定期更新目标网络（只更新高层）
-            if step_count % TARGET_UPDATE_FREQUENCY == 0:
-                self.high_level_agent.update_target_network()
-                # self.low_level_agent.update_target_network()  # 使用启发式控制，不需要训练
             
             # 更新可视化（如果启用）
             if self.enable_visualization and step_count % self.vis_update_interval == 0:
@@ -217,8 +151,7 @@ class TrainingManager:
         else:
             avg_completion_time = 0.0
         
-        # 在episode结束后衰减探索率（只针对高层智能体）
-        self.high_level_agent.decay_epsilon()
+        # 启发式高层控制器不需要epsilon衰减
         # self.low_level_agent.decay_epsilon()  # 使用启发式控制，不需要探索
         
         return (episode_reward, completed_count, completed_timeout_count, 
@@ -228,8 +161,8 @@ class TrainingManager:
     
     def train(self):
         """训练整个系统"""
-        print("=" * 80)
-        print("开始训练双智能体强化学习系统")
+        print("=\" * 80")
+        print("开始运行启发式调度系统评估")
         print("=" * 80)
         print(f"设备: {self.device}")
         print(f"总episode数: {self.num_episodes}")
@@ -239,11 +172,8 @@ class TrainingManager:
         print(f"车辆数: {MAX_VEHICLES}")
         print(f"上料口数: {NUM_LOADING_STATIONS}")
         print(f"下料口数: {NUM_UNLOADING_STATIONS}")
-        print(f"隐层维度: {HIDDEN_DIM}")
-        print(f"学习率: {LEARNING_RATE}")
-        print(f"批大小: {BATCH_SIZE}")
-        print(f"探索率衰减: {EPSILON_START} -> {EPSILON_END} (衰减系数: {EPSILON_DECAY})")
-        print(f"底层控制: 启发式控制器 (不使用神经网络)")
+        print(f"高层控制: 启发式规则（最近距离分配）")
+        print(f"底层控制: 启发式控制器")
         print("=" * 80)
         print()
         
@@ -269,10 +199,6 @@ class TrainingManager:
             self.episode_avg_completion_times.append(avg_completion)
             self.episode_times.append(episode_time)
             
-            # 获取当前探索率和经验池大小
-            current_epsilon = self.high_level_agent.epsilon
-            replay_size = len(self.high_level_agent.memory)
-            
             # 计算正常完成数量
             completed_normal = completed - completed_timeout
             
@@ -285,8 +211,6 @@ class TrainingManager:
                   f"在车: {on_vehicle_cargos:2d} | "
                   f"等待: {avg_wait:6.2f}s | "
                   f"完成: {avg_completion:6.2f}s | "
-                  f"ε: {current_epsilon:.3f} | "
-                  f"缓冲: {replay_size:6d} | "
                   f"耗时: {episode_time:5.2f}s", flush=True)
             
             # 每10个episode打印统计信息
@@ -310,27 +234,20 @@ class TrainingManager:
                 if avg_reward > self.best_avg_reward:
                     self.best_avg_reward = avg_reward
                     self.best_avg_completion = avg_completion
-                    self._save_models(prefix="best")
-                    print(f"  *** 新最佳模型! 平均奖励: {avg_reward:.2f}, 平均完成: {avg_completion:.1f} ***", flush=True)
+                    print(f"  *** 新最佳性能! 平均奖励: {avg_reward:.2f}, 平均完成: {avg_completion:.1f} ***", flush=True)
                 print()
             
-            # 定期保存检查点
-            if (episode + 1) % SAVE_FREQUENCY == 0:
-                self._save_models(prefix=f"checkpoint_ep{episode+1}")
-                print(f"  检查点已保存 (Episode {episode+1})", flush=True)
-        
         total_time = time.time() - start_time
         print("=" * 80)
-        print("训练完成")
+        print("评估完成")
         print("=" * 80)
         print(f"总耗时: {total_time:.2f}秒 ({total_time/60:.2f}分钟)")
         print(f"平均每episode耗时: {total_time/self.num_episodes:.2f}秒")
         print()
         
         # 打印最终统计
-        print("最终训练统计:")
+        print("最终评估统计:")
         print(f"  总episode数: {self.num_episodes}")
-        print(f"  总步数: {self.total_steps}")
         print(f"  平均奖励: {np.mean(self.episode_rewards):.2f} (最后100个: {np.mean(self.episode_rewards[-100:]):.2f})")
         print(f"  最大奖励: {np.max(self.episode_rewards):.2f}")
         print(f"  最小奖励: {np.min(self.episode_rewards):.2f}")
@@ -359,42 +276,15 @@ class TrainingManager:
         print(f"  最佳平均完成: {self.best_avg_completion:.1f}")
         print()
         
-        # 保存最终模型
-        self._save_models(prefix="final")
+        # 保存评估统计
+        self._save_stats()
     
-    def _save_models(self, prefix: str = ""):
-        """保存训练好的模型（只保存高层智能体）"""
+    def _save_stats(self):
+        """保存评估统计数据"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        stats_path = f"heuristic_evaluation_stats_{timestamp}.json"
         
-        if prefix:
-            high_level_model_path = f"models/{prefix}_high_level_agent.pt"
-            # low_level_model_path = f"models/{prefix}_low_level_agent.pt"  # 使用启发式控制，不需要保存
-            stats_path = f"models/{prefix}_training_stats.json"
-        else:
-            high_level_model_path = f"models/high_level_agent_{timestamp}.pt"
-            # low_level_model_path = f"models/low_level_agent_{timestamp}.pt"  # 使用启发式控制，不需要保存
-            stats_path = f"models/training_stats_{timestamp}.json"
-        
-        # 保存模型状态字典（只保存高层）
-        torch.save({
-            'q_network': self.high_level_agent.q_network.state_dict(),
-            'target_network': self.high_level_agent.target_network.state_dict(),
-            'epsilon': self.high_level_agent.epsilon,
-        }, high_level_model_path)
-        
-        # 低层使用启发式控制，不需要保存模型
-        # torch.save({
-        #     'q_network': self.low_level_agent.q_network.state_dict(),
-        #     'target_network': self.low_level_agent.target_network.state_dict(),
-        #     'epsilon': self.low_level_agent.epsilon,
-        # }, low_level_model_path)
-        
-        print(f"模型已保存:")
-        print(f"  高层智能体: {high_level_model_path}")
-        # print(f"  低层智能体: {low_level_model_path}")  # 使用启发式控制
-        print(f"  (低层使用启发式控制，无需保存模型)")
-        
-        # 保存训练统计
+        # 保存评估统计
         stats = {
             'episode_rewards': [float(x) for x in self.episode_rewards],
             'episode_completions': [int(x) for x in self.episode_completions],
@@ -404,26 +294,21 @@ class TrainingManager:
             'episode_avg_wait_times': [float(x) for x in self.episode_avg_wait_times],
             'episode_avg_completion_times': [float(x) for x in self.episode_avg_completion_times],
             'episode_times': [float(x) for x in self.episode_times],
-            'total_steps': self.total_steps,
             'best_avg_reward': float(self.best_avg_reward),
             'best_avg_completion': float(self.best_avg_completion),
             'config': {
                 'num_episodes': self.num_episodes,
                 'episode_duration': EPISODE_DURATION,
                 'control_interval': LOW_LEVEL_CONTROL_INTERVAL,
-                'hidden_dim': HIDDEN_DIM,
-                'learning_rate': LEARNING_RATE,
-                'batch_size': BATCH_SIZE,
-                'gamma': GAMMA,
-                'epsilon_start': EPSILON_START,
-                'epsilon_end': EPSILON_END,
-                'epsilon_decay': EPSILON_DECAY,
+                'high_level_control': 'heuristic_nearest_distance',
+                'low_level_control': 'heuristic_controller',
             }
         }
         
         with open(stats_path, 'w', encoding='utf-8') as f:
             json.dump(stats, f, indent=2, ensure_ascii=False)
-        print(f"  训练统计: {stats_path}")
+        print(f"评估统计已保存: {stats_path}")
+
 
 
 def main():

@@ -6,7 +6,7 @@ import torch
 import numpy as np
 from config import *
 from environment import Environment
-from agent_high_level import HighLevelAgent, HighLevelController
+from heuristic_high_level import HeuristicHighLevelController
 from agent_low_level import LowLevelAgent, LowLevelController
 import json
 from datetime import datetime
@@ -27,21 +27,14 @@ class DemoRunner:
         
         # 初始化环境
         self.env = Environment(seed=seed)
-        
-        # 计算观测维度
-        high_level_obs_dim = MAX_VEHICLES * 4 + NUM_LOADING_STATIONS * 3 + 2
-        high_level_action_dim = (MAX_VEHICLES * NUM_LOADING_STATIONS * 2) + \
-                               (MAX_VEHICLES * 2 * NUM_UNLOADING_STATIONS * 2)
-        
+
+        # 初始化低层智能体
         low_level_obs_dim = 3 + MAX_VEHICLES
         low_level_action_dim = 3
-        
-        # 初始化智能体（使用随机初始化）
-        self.high_level_agent = HighLevelAgent(high_level_obs_dim, high_level_action_dim)
         self.low_level_agent = LowLevelAgent(low_level_obs_dim, low_level_action_dim)
-        
-        # 初始化控制器
-        self.high_level_controller = HighLevelController(self.high_level_agent, self.env)
+
+        # 初始化控制器（使用启发式高层控制器）
+        self.high_level_controller = HeuristicHighLevelController(self.env)
         self.low_level_controller = LowLevelController(self.low_level_agent, self.env)
         
         # 统计信息
@@ -208,15 +201,12 @@ class DetailedVisualizationDemo:
     
     def __init__(self):
         self.env = Environment(seed=42)
-        
-        # 初始化智能体
-        high_level_obs_dim = MAX_VEHICLES * 4 + NUM_LOADING_STATIONS * 3 + 2
-        high_level_action_dim = 10
-        self.high_level_agent = HighLevelAgent(high_level_obs_dim, high_level_action_dim)
-        
+
+        # 初始化低层智能体
         low_level_agent = LowLevelAgent(3 + MAX_VEHICLES, 3)
-        
-        self.high_level_controller = HighLevelController(self.high_level_agent, self.env)
+
+        # 初始化控制器（使用启发式高层控制器）
+        self.high_level_controller = HeuristicHighLevelController(self.env)
         self.low_level_controller = LowLevelController(low_level_agent, self.env)
     
     def print_state(self, step: int):
