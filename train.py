@@ -15,7 +15,8 @@ from config import *
 from environment import Environment
 from heuristic_high_level import HeuristicHighLevelController
 from agent_low_level import LowLevelAgent, LowLevelController
-from rl_low_level_agent import RLLowLevelController  # 新的PPO控制器
+from rl_low_level_agent import RLLowLevelController  # SB3的PPO控制器
+from custom_ppo_controller import CustomPPOController  # 自定义PPO控制器
 
 
 class TrainingManager:
@@ -23,7 +24,8 @@ class TrainingManager:
 
     def __init__(self, num_episodes: int = NUM_EPISODES, use_gpu: bool = False,
                  enable_visualization: bool = False, vis_update_interval: int = 10,
-                 use_rl_low_level: bool = False, rl_model_path: str = None):
+                 use_rl_low_level: bool = False, rl_model_path: str = None,
+                 use_custom_ppo: bool = True):
         """
         初始化训练管理器
 
@@ -34,12 +36,14 @@ class TrainingManager:
             vis_update_interval: 可视化更新间隔（每多少步更新一次）
             use_rl_low_level: 是否使用RL底层控制器（PPO）
             rl_model_path: RL模型路径（用于加载已训练模型）
+            use_custom_ppo: 是否使用自定义PPO（True）还是SB3的PPO（False）
         """
         self.num_episodes = num_episodes
         self.device = 'cuda' if (use_gpu and torch.cuda.is_available()) else 'cpu'
         self.enable_visualization = enable_visualization
         self.vis_update_interval = vis_update_interval
         self.use_rl_low_level = use_rl_low_level
+        self.use_custom_ppo = use_custom_ppo
 
         # 初始化环境
         self.env = Environment(seed=42)
@@ -60,13 +64,22 @@ class TrainingManager:
 
         # 初始化底层控制器（根据参数选择）
         if self.use_rl_low_level:
-            # 使用新的PPO控制器
-            self.low_level_controller = RLLowLevelController(
-                self.env,
-                model_path=rl_model_path,
-                device=self.device
-            )
-            print(f"✓ 使用RL底层控制器（PPO）")
+            if self.use_custom_ppo:
+                # 使用自定义PPO控制器（推荐）
+                self.low_level_controller = CustomPPOController(
+                    self.env,
+                    model_path=rl_model_path,
+                    device=self.device
+                )
+                print(f"✓ 使用自定义PPO底层控制器（不依赖SB3）")
+            else:
+                # 使用SB3的PPO控制器
+                self.low_level_controller = RLLowLevelController(
+                    self.env,
+                    model_path=rl_model_path,
+                    device=self.device
+                )
+                print(f"✓ 使用SB3 PPO底层控制器")
         else:
             # 使用原有的DQN控制器
             sample_low_obs = self.env.get_low_level_observation(0)
@@ -122,6 +135,7 @@ class TrainingManager:
             # 低层控制
             if self.use_rl_low_level:
                 # 使用RL控制器（PPO）- 返回连续动作
+                # 自定义PPO会自动收集经验
                 low_level_actions = self.low_level_controller.compute_actions(deterministic=False)
             else:
                 # 使用启发式控制器 - 返回离散动作
@@ -133,6 +147,10 @@ class TrainingManager:
             step_count += 1
             self.total_steps += 1
             
+            # 如果使用自定义PPO，存储转移
+            if self.use_rl_low_level and self.use_custom_ppo:
+                self.low_level_controller.store_transitions(done=done)
+            
             # 更新上一步信息
             obs = next_obs
             
@@ -142,6 +160,17 @@ class TrainingManager:
             
             if done:
                 break
+        
+        # Episode结束后，训练PPO模型
+        if self.use_rl_low_level and self.use_custom_ppo:
+            # 使用自定义PPO，直接从缓冲区更新
+            train_stats = self.low_level_controller.update_policies()
+            # 可以打印训练统计（可选）
+            # print(f"  训练统计: {train_stats}")
+        elif self.use_rl_low_level and not self.use_custom_ppo:
+            # 使用SB3的PPO，需要通过环境交互训练
+            # 这部分逻辑保留用于兼容性
+            pass
         
         # 统计
         completed_count = self.env.completed_cargos
@@ -350,6 +379,8 @@ def main():
                        help='可视化更新间隔（步数）')
     parser.add_argument('--use-rl-low-level', action='store_false',
                        help='使用RL底层控制器（PPO）代替启发式控制器')
+    parser.add_argument('--use-sb3-ppo', action='store_true',
+                       help='使用Stable-Baselines3的PPO（默认使用自定义PPO）')
     parser.add_argument('--rl-model-path', type=str, default=None,
                        help='RL模型路径（用于继续训练或评估）')
     args = parser.parse_args()
@@ -366,7 +397,10 @@ def main():
 
     # 打印控制器配置
     if args.use_rl_low_level:
-        print("✓ 底层控制: RL智能体（PPO - 连续动作空间）")
+        if args.use_sb3_ppo:
+            print("✓ 底层控制: RL智能体（Stable-Baselines3 PPO）")
+        else:
+            print("✓ 底层控制: RL智能体（自定义PPO - 推荐）")
         if args.rl_model_path:
             print(f"  加载模型: {args.rl_model_path}")
     else:
@@ -381,7 +415,8 @@ def main():
         enable_visualization=False,
         vis_update_interval=args.vis_interval,
         use_rl_low_level=args.use_rl_low_level,
-        rl_model_path=args.rl_model_path
+        rl_model_path=args.rl_model_path,
+        use_custom_ppo=not args.use_sb3_ppo  # 默认使用自定义PPO
     )
 
     # 开始训练

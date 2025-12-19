@@ -490,3 +490,20 @@ class RLLowLevelController:
             agent.save(save_path)
 
         print(f"✓ 所有车辆模型已保存到: {save_dir}")
+
+    def train_on_episode(self, total_timesteps_per_vehicle: int = 2048):
+        """
+        对所有车辆进行一轮训练
+        
+        Args:
+            total_timesteps_per_vehicle: 每个车辆训练的步数
+        
+        注意：这个方法会让每个智能体在其Gym环境中进行学习
+        但由于我们的架构限制，这里实际上是让模型通过已有的交互数据进行更新
+        """
+        for vehicle_id, agent in self.agents.items():
+            # 使用SB3的learn方法进行训练
+            # 注意：这会让agent与gym_env交互，但gym_env实际上是使用base_env的状态
+            # 因此训练效果可能不理想
+            agent.learn(total_timesteps=total_timesteps_per_vehicle)
+
