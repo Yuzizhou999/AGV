@@ -304,35 +304,52 @@ class Environment:
         return obs, reward, done
     
     def _execute_low_level_control(self, actions: Dict):
-        """执行低层控制：更新车辆位置和速度"""
+        """
+        执行低层控制：更新车辆位置和速度
+
+        支持两种动作格式：
+        1. 离散动作（int）: 0=减速, 1=保持, 2=加速（用于启发式和DQN）
+        2. 连续动作（float）: 加速度值 [-MAX_ACCELERATION, MAX_ACCELERATION]（用于PPO）
+        """
         for vehicle_id, action in actions.items():
             vehicle = self.vehicles[vehicle_id]
-            
+
             # 如果车辆正在进行上料/下料操作，强制锁定不移动
             if vehicle.is_loading_unloading:
                 vehicle.velocity = 0.0  # 强制停止
                 # 不更新位置，直接跳过
                 continue
-            
-            # action: 0=减速, 1=保持, 2=加速
+
+            # 判断动作类型并计算加速度
+            if isinstance(action, (int, np.integer)):
+                # 离散动作: 0=减速, 1=保持, 2=加速
+                if action == 0:
+                    acceleration = -MAX_ACCELERATION
+                elif action == 1:
+                    acceleration = 0.0
+                else:  # action == 2
+                    acceleration = MAX_ACCELERATION
+            else:
+                # 连续动作: 直接使用加速度值
+                acceleration = float(action)
+                # 限制加速度范围
+                acceleration = np.clip(acceleration, -MAX_ACCELERATION, MAX_ACCELERATION)
+
+            # 计算新速度
             # 轨道坐标定义为沿顺时针方向，速度不允许为负（不支持反向行驶）
-            if action == 0:
-                new_velocity = max(0, vehicle.velocity - MAX_ACCELERATION * LOW_LEVEL_CONTROL_INTERVAL)
-            elif action == 1:
-                new_velocity = vehicle.velocity
-            else:  # action == 2
-                new_velocity = min(MAX_SPEED, vehicle.velocity + MAX_ACCELERATION * LOW_LEVEL_CONTROL_INTERVAL)
+            new_velocity = vehicle.velocity + acceleration * LOW_LEVEL_CONTROL_INTERVAL
+            new_velocity = np.clip(new_velocity, 0.0, MAX_SPEED)
 
             # 检查安全距离约束
             if not self._check_safety_distance(vehicle_id, new_velocity):
                 new_velocity = 0.0  # 强制停止
-            
+
             vehicle.velocity = new_velocity
-            
+
             # 更新位置
             displacement = vehicle.velocity * LOW_LEVEL_CONTROL_INTERVAL
             vehicle.position = self._normalize_position(vehicle.position + displacement)
-            
+
             # 更新工位操作时间
             for i in range(2):
                 if vehicle.slot_operation_end_time[i] > 0:
