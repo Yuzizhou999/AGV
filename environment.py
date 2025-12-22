@@ -214,7 +214,7 @@ class Environment:
     
     def reset(self):
         """重置环境"""
-        self.__init__(seed=None)
+        self.__init__(seed=42)
         return self._get_observation()
     
     def _normalize_position(self, pos: float) -> float:
