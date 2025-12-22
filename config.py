@@ -42,7 +42,7 @@ REWARD_ASSIGNMENT = 20.0  # 分配货物给小车的奖励，鼓励及时做出�
 REWARD_WAIT_PENALTY_COEFF = 0.00002  # 等待惩罚系数，降低以减少负奖励
 REWARD_TIMEOUT_PENALTY = -5.0  # 超时惩罚，降低以避免过大的负奖励
 REWARD_HOLDING_PENALTY_COEFF = 0.00002  # 持有货物惩罚系数，鼓励快速卸货
-REWARD_SAFETY_VIOLATION = -50.0  # 安全距离违反惩罚
+REWARD_SAFETY_VIOLATION = -1.0  # 安全距离违反惩罚
 REWARD_SPEED_CHANGE_PENALTY = -0.01  # 速度变化惩罚系数，降低
 
 # ========== 神经网络配置 ==========

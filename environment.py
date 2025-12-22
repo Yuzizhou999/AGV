@@ -211,6 +211,7 @@ class Environment:
         self.timed_out_cargos = 0
         self.total_wait_time = 0.0
         self.completed_cargo_list = []  # 保存已完成货物的详细信息
+        self.safety_violations = []  # 记录本次step的安全违例车辆ID
     
     def reset(self):
         """重置环境"""
@@ -311,6 +312,9 @@ class Environment:
         1. 离散动作（int）: 0=减速, 1=保持, 2=加速（用于启发式和DQN）
         2. 连续动作（float）: 加速度值 [-MAX_ACCELERATION, MAX_ACCELERATION]（用于PPO）
         """
+        # 清空上一次的违例记录
+        self.safety_violations = []
+
         for vehicle_id, action in actions.items():
             vehicle = self.vehicles[vehicle_id]
 
@@ -342,6 +346,7 @@ class Environment:
 
             # 检查安全距离约束
             if not self._check_safety_distance(vehicle_id, new_velocity):
+                self.safety_violations.append(vehicle_id)  # 记录违例车辆
                 new_velocity = 0.0  # 强制停止
 
             vehicle.velocity = new_velocity
@@ -799,7 +804,10 @@ class Environment:
         
         # 分配货物奖励(降低以避免过度分配)
         reward += len(assigned_ids) * REWARD_ASSIGNMENT * 0.5
-        
+
+        # 安全距离违例惩罚
+        reward += len(self.safety_violations) * REWARD_SAFETY_VIOLATION
+
         # 等待惩罚（针对在上料口等待的货物）
         for cargo in self.cargos.values():
             if cargo.completion_time is None and cargo.id not in completed_ids:
