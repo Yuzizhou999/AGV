@@ -10,6 +10,7 @@ import time
 import json
 from datetime import datetime
 import os
+import logging
 
 from config import *
 from environment import Environment
@@ -19,13 +20,62 @@ from rl_low_level_agent import RLLowLevelController  # SB3的PPO控制器
 from custom_ppo_controller import CustomPPOController  # 自定义PPO控制器
 
 
+def setup_logger(log_dir: str = "logs") -> logging.Logger:
+    """
+    配置日志系统
+
+    Args:
+        log_dir: 日志文件存放目录
+
+    Returns:
+        配置好的logger实例
+    """
+    # 创建日志目录
+    os.makedirs(log_dir, exist_ok=True)
+
+    # 生成日志文件名(带时间戳)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = os.path.join(log_dir, f"training_{timestamp}.log")
+
+    # 创建logger
+    logger = logging.getLogger("AGV_Training")
+    logger.setLevel(logging.DEBUG)
+
+    # 清除已有的handlers(避免重复配置)
+    logger.handlers.clear()
+
+    # 文件handler - 记录所有级别
+    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    file_handler.setLevel(logging.DEBUG)
+    file_formatter = logging.Formatter(
+        '%(asctime)s | %(levelname)-8s | %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    file_handler.setFormatter(file_formatter)
+
+    # 控制台handler - 只记录INFO及以上级别
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_formatter = logging.Formatter('%(message)s')
+    console_handler.setFormatter(console_formatter)
+
+    # 添加handlers
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+
+    logger.info(f"日志系统已初始化 | 日志文件: {log_file}")
+    logger.info("=" * 80)
+
+    return logger
+
+
 class TrainingManager:
     """训练管理器"""
 
     def __init__(self, num_episodes: int = NUM_EPISODES, use_gpu: bool = False,
                  enable_visualization: bool = False, vis_update_interval: int = 10,
                  use_rl_low_level: bool = False, rl_model_path: str = None,
-                 use_custom_ppo: bool = True):
+                 use_custom_ppo: bool = True, logger: logging.Logger = None):
         """
         初始化训练管理器
 
@@ -37,6 +87,7 @@ class TrainingManager:
             use_rl_low_level: 是否使用RL底层控制器（PPO）
             rl_model_path: RL模型路径（用于加载已训练模型）
             use_custom_ppo: 是否使用自定义PPO（True）还是SB3的PPO（False）
+            logger: 日志记录器实例
         """
         self.num_episodes = num_episodes
         self.device = 'cuda' if (use_gpu and torch.cuda.is_available()) else 'cpu'
@@ -44,6 +95,7 @@ class TrainingManager:
         self.vis_update_interval = vis_update_interval
         self.use_rl_low_level = use_rl_low_level
         self.use_custom_ppo = use_custom_ppo
+        self.logger = logger if logger is not None else logging.getLogger("AGV_Training")
 
         # 初始化环境
         self.env = Environment(seed=42)
@@ -54,9 +106,9 @@ class TrainingManager:
             try:
                 from visualizer import AGVVisualizer
                 self.visualizer = AGVVisualizer(self.env)
-                print("✓ 可视化已启用")
+                self.logger.info("✓ 可视化已启用")
             except ImportError:
-                print("⚠ 无法导入可视化模块，禁用可视化")
+                self.logger.warning("⚠ 无法导入可视化模块，禁用可视化")
                 self.enable_visualization = False
 
         # 初始化高层控制器（使用启发式）
@@ -71,7 +123,7 @@ class TrainingManager:
                     model_path=rl_model_path,
                     device=self.device
                 )
-                print(f"✓ 使用自定义PPO底层控制器（不依赖SB3）")
+                self.logger.info("✓ 使用自定义PPO底层控制器（不依赖SB3）")
             else:
                 # 使用SB3的PPO控制器
                 self.low_level_controller = RLLowLevelController(
@@ -79,7 +131,7 @@ class TrainingManager:
                     model_path=rl_model_path,
                     device=self.device
                 )
-                print(f"✓ 使用SB3 PPO底层控制器")
+                self.logger.info("✓ 使用SB3 PPO底层控制器")
         else:
             # 使用原有的DQN控制器
             sample_low_obs = self.env.get_low_level_observation(0)
@@ -87,7 +139,7 @@ class TrainingManager:
             low_level_action_dim = 3
             self.low_level_agent = LowLevelAgent(low_level_obs_dim, low_level_action_dim, self.device)
             self.low_level_controller = LowLevelController(self.low_level_agent, self.env)
-            print(f"✓ 使用启发式底层控制器")
+            self.logger.info("✓ 使用启发式底层控制器")
         
         # 统计信息
         self.episode_rewards = []
@@ -212,21 +264,21 @@ class TrainingManager:
     
     def train(self):
         """训练整个系统"""
-        print("=\" * 80")
-        print("开始运行启发式调度系统评估")
-        print("=" * 80)
-        print(f"设备: {self.device}")
-        print(f"总episode数: {self.num_episodes}")
-        print(f"仿真时长: {EPISODE_DURATION}秒 ({EPISODE_DURATION/3600:.2f}小时)")
-        print(f"控制间隔: {LOW_LEVEL_CONTROL_INTERVAL}秒")
-        print(f"每episode步数: {MAX_STEPS_PER_EPISODE}")
-        print(f"车辆数: {MAX_VEHICLES}")
-        print(f"上料口数: {NUM_LOADING_STATIONS}")
-        print(f"下料口数: {NUM_UNLOADING_STATIONS}")
-        print(f"高层控制: 启发式规则（最近距离分配）")
-        print(f"底层控制: 启发式控制器")
-        print("=" * 80)
-        print()
+        self.logger.info("=" * 80)
+        self.logger.info("开始运行启发式调度系统评估")
+        self.logger.info("=" * 80)
+        self.logger.info(f"设备: {self.device}")
+        self.logger.info(f"总episode数: {self.num_episodes}")
+        self.logger.info(f"仿真时长: {EPISODE_DURATION}秒 ({EPISODE_DURATION/3600:.2f}小时)")
+        self.logger.info(f"控制间隔: {LOW_LEVEL_CONTROL_INTERVAL}秒")
+        self.logger.info(f"每episode步数: {MAX_STEPS_PER_EPISODE}")
+        self.logger.info(f"车辆数: {MAX_VEHICLES}")
+        self.logger.info(f"上料口数: {NUM_LOADING_STATIONS}")
+        self.logger.info(f"下料口数: {NUM_UNLOADING_STATIONS}")
+        self.logger.info(f"高层控制: 启发式规则（最近距离分配）")
+        self.logger.info(f"底层控制: {'自定义PPO' if self.use_custom_ppo else 'SB3 PPO' if self.use_rl_low_level else '启发式控制器'}")
+        self.logger.info("=" * 80)
+        self.logger.info("")
         
         start_time = time.time()
         os.makedirs("models", exist_ok=True)
@@ -254,7 +306,7 @@ class TrainingManager:
             completed_normal = completed - completed_timeout
             
             # 每个episode都打印基本信息
-            print(f"Episode {episode+1:4d}/{self.num_episodes} | "
+            self.logger.info(f"Episode {episode+1:4d}/{self.num_episodes} | "
                   f"奖励: {episode_reward:9.2f} | "
                   f"完成: {completed:3d} (正常: {completed_normal:3d}, 超时: {completed_timeout:2d}) | "
                   f"待取: {waiting_cargos:2d} (正常: {waiting_normal:2d}, 超时: {waiting_timeout:2d}) | "
@@ -262,7 +314,7 @@ class TrainingManager:
                   f"在车: {on_vehicle_cargos:2d} | "
                   f"等待: {avg_wait:6.2f}s | "
                   f"完成: {avg_completion:6.2f}s | "
-                  f"耗时: {episode_time:5.2f}s", flush=True)
+                  f"耗时: {episode_time:5.2f}s")
             
             # 每10个episode打印统计信息
             if (episode + 1) % 10 == 0:
@@ -274,63 +326,63 @@ class TrainingManager:
                 avg_wait_10 = np.mean(self.episode_avg_wait_times[-10:])
                 avg_completion_time_10 = np.mean(self.episode_avg_completion_times[-10:])
                 
-                print(f"  [Episode {episode-8:4d}-{episode+1:4d} 统计] "
+                self.logger.info(f"  [Episode {episode-8:4d}-{episode+1:4d} 统计] "
                       f"平均奖励: {avg_reward:9.2f} | "
                       f"平均完成: {avg_completion:6.1f} (正常: {avg_completion-avg_completed_timeout:5.1f}, 超时: {avg_completed_timeout:4.1f}) | "
                       f"平均待取: {avg_waiting_normal+avg_waiting_timeout:4.1f} (正常: {avg_waiting_normal:4.1f}, 超时: {avg_waiting_timeout:4.1f}) | "
                       f"平均等待: {avg_wait_10:6.2f}s | "
-                      f"平均完成: {avg_completion_time_10:6.2f}s", flush=True)
-                
+                      f"平均完成: {avg_completion_time_10:6.2f}s")
+
                 # 检查是否是最佳模型
                 if avg_reward > self.best_avg_reward:
                     self.best_avg_reward = avg_reward
                     self.best_avg_completion = avg_completion
-                    print(f"  *** 新最佳性能! 平均奖励: {avg_reward:.2f}, 平均完成: {avg_completion:.1f} ***", flush=True)
+                    self.logger.info(f"  *** 新最佳性能! 平均奖励: {avg_reward:.2f}, 平均完成: {avg_completion:.1f} ***")
 
                     # 保存最佳模型
                     if self.use_rl_low_level:
                         self.low_level_controller.save_models("models", prefix="rl_low_level_best")
 
-                print()
+                self.logger.info("")
             
         total_time = time.time() - start_time
-        print("=" * 80)
-        print("评估完成")
-        print("=" * 80)
-        print(f"总耗时: {total_time:.2f}秒 ({total_time/60:.2f}分钟)")
-        print(f"平均每episode耗时: {total_time/self.num_episodes:.2f}秒")
-        print()
-        
+        self.logger.info("=" * 80)
+        self.logger.info("评估完成")
+        self.logger.info("=" * 80)
+        self.logger.info(f"总耗时: {total_time:.2f}秒 ({total_time/60:.2f}分钟)")
+        self.logger.info(f"平均每episode耗时: {total_time/self.num_episodes:.2f}秒")
+        self.logger.info("")
+
         # 打印最终统计
-        print("最终评估统计:")
-        print(f"  总episode数: {self.num_episodes}")
-        print(f"  平均奖励: {np.mean(self.episode_rewards):.2f} (最后100个: {np.mean(self.episode_rewards[-100:]):.2f})")
-        print(f"  最大奖励: {np.max(self.episode_rewards):.2f}")
-        print(f"  最小奖励: {np.min(self.episode_rewards):.2f}")
+        self.logger.info("最终评估统计:")
+        self.logger.info(f"  总episode数: {self.num_episodes}")
+        self.logger.info(f"  平均奖励: {np.mean(self.episode_rewards):.2f} (最后100个: {np.mean(self.episode_rewards[-100:]):.2f})")
+        self.logger.info(f"  最大奖励: {np.max(self.episode_rewards):.2f}")
+        self.logger.info(f"  最小奖励: {np.min(self.episode_rewards):.2f}")
         
         # 如果启用了可视化，显示训练统计图表
         if self.enable_visualization and self.visualizer is not None:
-            print("\n正在生成可视化统计图表...")
+            self.logger.info("\n正在生成可视化统计图表...")
             self.visualizer.plot_statistics(save_path="training_visualization_stats.png")
             self.visualizer.close()
-        
+
         avg_completed = np.mean(self.episode_completions)
         avg_completed_timeout = np.mean(self.episode_completed_timeouts)
         avg_completed_normal = avg_completed - avg_completed_timeout
         avg_waiting_normal = np.mean(self.episode_waiting_normals)
         avg_waiting_timeout = np.mean(self.episode_waiting_timeouts)
-        
-        print(f"  平均完成件数: {avg_completed:.2f} (最后100个: {np.mean(self.episode_completions[-100:]):.2f})")
-        print(f"    - 正常完成: {avg_completed_normal:.2f}")
-        print(f"    - 超时完成: {avg_completed_timeout:.2f}")
-        print(f"  平均待取件数: {avg_waiting_normal + avg_waiting_timeout:.2f}")
-        print(f"    - 正常等待: {avg_waiting_normal:.2f}")
-        print(f"    - 超时等待: {avg_waiting_timeout:.2f}")
-        print(f"  平均等待时间(到被取走): {np.mean(self.episode_avg_wait_times):.2f}秒")
-        print(f"  平均完成时间(到完成下料): {np.mean(self.episode_avg_completion_times):.2f}秒")
-        print(f"  最佳平均奖励: {self.best_avg_reward:.2f}")
-        print(f"  最佳平均完成: {self.best_avg_completion:.1f}")
-        print()
+
+        self.logger.info(f"  平均完成件数: {avg_completed:.2f} (最后100个: {np.mean(self.episode_completions[-100:]):.2f})")
+        self.logger.info(f"    - 正常完成: {avg_completed_normal:.2f}")
+        self.logger.info(f"    - 超时完成: {avg_completed_timeout:.2f}")
+        self.logger.info(f"  平均待取件数: {avg_waiting_normal + avg_waiting_timeout:.2f}")
+        self.logger.info(f"    - 正常等待: {avg_waiting_normal:.2f}")
+        self.logger.info(f"    - 超时等待: {avg_waiting_timeout:.2f}")
+        self.logger.info(f"  平均等待时间(到被取走): {np.mean(self.episode_avg_wait_times):.2f}秒")
+        self.logger.info(f"  平均完成时间(到完成下料): {np.mean(self.episode_avg_completion_times):.2f}秒")
+        self.logger.info(f"  最佳平均奖励: {self.best_avg_reward:.2f}")
+        self.logger.info(f"  最佳平均完成: {self.best_avg_completion:.1f}")
+        self.logger.info("")
         
         # 保存评估统计
         self._save_stats()
@@ -363,7 +415,7 @@ class TrainingManager:
         
         with open(stats_path, 'w', encoding='utf-8') as f:
             json.dump(stats, f, indent=2, ensure_ascii=False)
-        print(f"评估统计已保存: {stats_path}")
+        self.logger.info(f"评估统计已保存: {stats_path}")
 
 
 
@@ -385,28 +437,31 @@ def main():
                        help='RL模型路径（用于继续训练或评估）')
     args = parser.parse_args()
 
+    # 初始化日志系统
+    logger = setup_logger()
+
     # 检查GPU可用性
     use_gpu = torch.cuda.is_available()
-    print(f"GPU可用: {use_gpu}")
+    logger.info(f"GPU可用: {use_gpu}")
     if use_gpu:
-        print(f"GPU设备: {torch.cuda.get_device_name(0)}")
+        logger.info(f"GPU设备: {torch.cuda.get_device_name(0)}")
 
     if args.visualize:
-        print("⚠ 可视化已启用 - 训练速度会显著降低")
-        print(f"  可视化更新间隔: {args.vis_interval} 步")
+        logger.warning("⚠ 可视化已启用 - 训练速度会显著降低")
+        logger.info(f"  可视化更新间隔: {args.vis_interval} 步")
 
     # 打印控制器配置
     if args.use_rl_low_level:
         if args.use_sb3_ppo:
-            print("✓ 底层控制: RL智能体（Stable-Baselines3 PPO）")
+            logger.info("✓ 底层控制: RL智能体（Stable-Baselines3 PPO）")
         else:
-            print("✓ 底层控制: RL智能体（自定义PPO - 推荐）")
+            logger.info("✓ 底层控制: RL智能体（自定义PPO - 推荐）")
         if args.rl_model_path:
-            print(f"  加载模型: {args.rl_model_path}")
+            logger.info(f"  加载模型: {args.rl_model_path}")
     else:
-        print("✓ 底层控制: 启发式控制器")
+        logger.info("✓ 底层控制: 启发式控制器")
 
-    print()
+    logger.info("")
 
     # 创建训练管理器
     manager = TrainingManager(
@@ -416,7 +471,8 @@ def main():
         vis_update_interval=args.vis_interval,
         use_rl_low_level=args.use_rl_low_level,
         rl_model_path=args.rl_model_path,
-        use_custom_ppo=not args.use_sb3_ppo  # 默认使用自定义PPO
+        use_custom_ppo=not args.use_sb3_ppo,  # 默认使用自定义PPO
+        logger=logger
     )
 
     # 开始训练
