@@ -98,7 +98,8 @@ class TrainingManager:
         self.logger = logger if logger is not None else logging.getLogger("AGV_Training")
 
         # 初始化环境
-        self.env = Environment(seed=42)
+        self.env = Environment()  # 训练环境：不固定seed
+        self.eval_env = Environment()  # 测试环境：独立实例
 
         # 初始化可视化器（如果启用）
         self.visualizer = None
@@ -113,6 +114,7 @@ class TrainingManager:
 
         # 初始化高层控制器（使用启发式）
         self.high_level_controller = HeuristicHighLevelController(self.env)
+        self.eval_high_level_controller = HeuristicHighLevelController(self.eval_env)  # 评估环境专用控制器
 
         # 初始化底层控制器（根据参数选择）
         if self.use_rl_low_level:
@@ -154,21 +156,126 @@ class TrainingManager:
         # 最佳模型追踪
         self.best_avg_reward = float('-inf')
         self.best_avg_completion = 0
+        self.best_eval_reward = float('-inf')  # 最佳测试奖励
+        self.episode_actor_losses = []  # Actor loss追踪
+        self.episode_critic_losses = []  # Critic loss追踪
+        self.episode_entropies = []  # Entropy追踪
         
         # 全局步数统计
         self.total_steps = 0
-    
-    def train_episode(self, episode_idx: int) -> Tuple[float, int, int, int, float, int, int, int]:
-        """
-        训练一个episode
-        
+
+    def generate_random_seed(self, exclude: int = None) -> int:
+        """生成随机seed，排除指定值
+
+        Args:
+            exclude: 需要排除的seed值(通常是EVAL_SEED)
+
         Returns:
-            (total_reward, completed_count, completed_timeout_count, 
+            随机生成的seed整数(0-99999)
+        """
+        while True:
+            seed = np.random.randint(0, 100000)
+            if exclude is None or seed != exclude:
+                return seed
+
+    def aggregate_loss(self, train_stats: dict) -> dict:
+        """聚合所有vehicle的loss统计
+
+        Args:
+            train_stats: {vehicle_id: {'policy_loss', 'value_loss', 'entropy'}}
+                        来自CustomPPOController.update_policies()的返回值
+
+        Returns:
+            {'avg_policy_loss': float, 'avg_value_loss': float, 'avg_entropy': float}
+        """
+        if not train_stats:
+            return {
+                'avg_policy_loss': 0.0,
+                'avg_value_loss': 0.0,
+                'avg_entropy': 0.0
+            }
+
+        policy_losses = [s['policy_loss'] for s in train_stats.values()]
+        value_losses = [s['value_loss'] for s in train_stats.values()]
+        entropies = [s['entropy'] for s in train_stats.values()]
+
+        return {
+            'avg_policy_loss': np.mean(policy_losses),
+            'avg_value_loss': np.mean(value_losses),
+            'avg_entropy': np.mean(entropies)
+        }
+
+    def evaluate(self, seed: int = None) -> Tuple[float, dict]:
+        """评估当前模型性能
+
+        Args:
+            seed: 评估使用的随机种子，默认使用EVAL_SEED
+
+        Returns:
+            (episode_reward, stats): 测试奖励和统计信息
+        """
+        if seed is None:
+            seed = EVAL_SEED
+
+        # 临时替换low_level_controller的环境引用（评估时使用eval_env）
+        original_env = None
+        if self.use_rl_low_level:
+            original_env = self.low_level_controller.env
+            self.low_level_controller.env = self.eval_env
+
+        obs = self.eval_env.reset(seed=seed)
+        episode_reward = 0.0
+        step_count = 0
+        next_high_level_decision = 0.0
+
+        while self.eval_env.current_time < EPISODE_DURATION:
+            # 高层决策
+            high_level_action = None
+            if self.eval_env.current_time >= next_high_level_decision:
+                high_level_action = self.eval_high_level_controller.compute_action(obs)
+                next_high_level_decision = self.eval_env.current_time + HIGH_LEVEL_DECISION_INTERVAL
+
+            # 低层控制(使用确定性策略)
+            if self.use_rl_low_level:
+                low_level_actions = self.low_level_controller.compute_actions(deterministic=True)
+            else:
+                low_level_actions = self.low_level_controller.compute_actions()
+
+            # 执行一步
+            next_obs, reward, done = self.eval_env.step(high_level_action, low_level_actions)
+            episode_reward += reward
+            step_count += 1
+            obs = next_obs
+
+            if done:
+                break
+
+        # 恢复原环境引用
+        if original_env is not None:
+            self.low_level_controller.env = original_env
+
+        # 收集统计信息
+        stats = {
+            'completed': self.eval_env.completed_cargos,
+            'total_cargos': self.eval_env.cargo_counter
+        }
+
+        return episode_reward, stats
+
+    def train_episode(self, episode_idx: int, seed: int = None) -> Tuple[float, int, int, int, float, int, int, int, dict]:
+        """训练一个episode
+
+        Args:
+            episode_idx: Episode索引
+            seed: 环境重置使用的随机种子，None时使用随机值
+
+        Returns:
+            (total_reward, completed_count, completed_timeout_count,
              waiting_cargos_normal, waiting_cargos_timeout,
              avg_wait_time, avg_completion_time,
-             total_cargos, waiting_cargos, on_vehicle_cargos)
+             total_cargos, waiting_cargos, on_vehicle_cargos, train_stats)
         """
-        obs = self.env.reset()
+        obs = self.env.reset(seed=seed)
         episode_reward = 0.0
         step_count = 0
         
@@ -214,6 +321,7 @@ class TrainingManager:
                 break
         
         # Episode结束后，训练PPO模型
+        train_stats = None
         if self.use_rl_low_level and self.use_custom_ppo:
             # 使用自定义PPO，直接从缓冲区更新
             train_stats = self.low_level_controller.update_policies()
@@ -256,11 +364,11 @@ class TrainingManager:
         
         # 启发式高层控制器不需要epsilon衰减
         # self.low_level_agent.decay_epsilon()  # 使用启发式控制，不需要探索
-        
-        return (episode_reward, completed_count, completed_timeout_count, 
-                waiting_cargos_normal, waiting_cargos_timeout, 
+
+        return (episode_reward, completed_count, completed_timeout_count,
+                waiting_cargos_normal, waiting_cargos_timeout,
                 avg_wait_time, avg_completion_time,
-                total_cargos, waiting_cargos, on_vehicle_cargos)
+                total_cargos, waiting_cargos, on_vehicle_cargos, train_stats)
     
     def train(self):
         """训练整个系统"""
@@ -285,14 +393,18 @@ class TrainingManager:
         
         for episode in range(self.num_episodes):
             episode_start_time = time.time()
-            
-            (episode_reward, completed, completed_timeout, 
-             waiting_normal, waiting_timeout, 
+
+            # 生成随机seed(排除EVAL_SEED)
+            train_seed = self.generate_random_seed(exclude=EVAL_SEED)
+
+            # 训练一个episode
+            (episode_reward, completed, completed_timeout,
+             waiting_normal, waiting_timeout,
              avg_wait, avg_completion,
-             total_cargos, waiting_cargos, on_vehicle_cargos) = self.train_episode(episode)
-            
+             total_cargos, waiting_cargos, on_vehicle_cargos, train_stats) = self.train_episode(episode, train_seed)
+
             episode_time = time.time() - episode_start_time
-            
+
             self.episode_rewards.append(episode_reward)
             self.episode_completions.append(completed)
             self.episode_completed_timeouts.append(completed_timeout)
@@ -301,12 +413,19 @@ class TrainingManager:
             self.episode_avg_wait_times.append(avg_wait)
             self.episode_avg_completion_times.append(avg_completion)
             self.episode_times.append(episode_time)
-            
+
+            # 记录loss(仅在使用RL时)
+            if train_stats and self.use_rl_low_level:
+                avg_loss = self.aggregate_loss(train_stats)
+                self.episode_actor_losses.append(avg_loss['avg_policy_loss'])
+                self.episode_critic_losses.append(avg_loss['avg_value_loss'])
+                self.episode_entropies.append(avg_loss['avg_entropy'])
+
             # 计算正常完成数量
             completed_normal = completed - completed_timeout
-            
+
             # 每个episode都打印基本信息
-            self.logger.info(f"Episode {episode+1:4d}/{self.num_episodes} | "
+            self.logger.info(f"Episode {episode+1:4d}/{self.num_episodes} (seed={train_seed}) | "
                   f"奖励: {episode_reward:9.2f} | "
                   f"完成: {completed:3d} (正常: {completed_normal:3d}, 超时: {completed_timeout:2d}) | "
                   f"待取: {waiting_cargos:2d} (正常: {waiting_normal:2d}, 超时: {waiting_timeout:2d}) | "
@@ -315,9 +434,32 @@ class TrainingManager:
                   f"等待: {avg_wait:6.2f}s | "
                   f"完成: {avg_completion:6.2f}s | "
                   f"耗时: {episode_time:5.2f}s")
-            
-            # 每10个episode打印统计信息
-            if (episode + 1) % 10 == 0:
+
+            # 打印loss(仅在使用RL时)
+            if train_stats and self.use_rl_low_level:
+                avg_loss = self.aggregate_loss(train_stats)
+                self.logger.info(f"  [训练] Loss: actor={avg_loss['avg_policy_loss']:.4f}, "
+                                f"critic={avg_loss['avg_value_loss']:.4f}, "
+                                f"entropy={avg_loss['avg_entropy']:.4f}")
+
+            # 每EVAL_INTERVAL个episode评估
+            if (episode + 1) % EVAL_INTERVAL == 0:
+                eval_reward, eval_stats = self.evaluate()
+
+                # 打印评估结果
+                self.logger.info(f"  [评估] (seed={EVAL_SEED}) 测试奖励: {eval_reward:.2f} | "
+                                f"测试完成: {eval_stats['completed']}")
+
+                # 检查是否是最佳模型(使用测试奖励)
+                if eval_reward > self.best_eval_reward:
+                    self.best_eval_reward = eval_reward
+                    self.logger.info(f"  *** 新最佳测试性能! 测试奖励: {eval_reward:.2f} ***")
+
+                    # 保存最佳模型
+                    if self.use_rl_low_level:
+                        self.low_level_controller.save_models("models", prefix="rl_low_level_best")
+
+                # 保持原有的10个episode统计(基于训练奖励)
                 avg_reward = np.mean(self.episode_rewards[-10:])
                 avg_completion = np.mean(self.episode_completions[-10:])
                 avg_completed_timeout = np.mean(self.episode_completed_timeouts[-10:])
@@ -325,23 +467,13 @@ class TrainingManager:
                 avg_waiting_timeout = np.mean(self.episode_waiting_timeouts[-10:])
                 avg_wait_10 = np.mean(self.episode_avg_wait_times[-10:])
                 avg_completion_time_10 = np.mean(self.episode_avg_completion_times[-10:])
-                
+
                 self.logger.info(f"  [Episode {episode-8:4d}-{episode+1:4d} 统计] "
                       f"平均奖励: {avg_reward:9.2f} | "
                       f"平均完成: {avg_completion:6.1f} (正常: {avg_completion-avg_completed_timeout:5.1f}, 超时: {avg_completed_timeout:4.1f}) | "
                       f"平均待取: {avg_waiting_normal+avg_waiting_timeout:4.1f} (正常: {avg_waiting_normal:4.1f}, 超时: {avg_waiting_timeout:4.1f}) | "
                       f"平均等待: {avg_wait_10:6.2f}s | "
                       f"平均完成: {avg_completion_time_10:6.2f}s")
-
-                # 检查是否是最佳模型
-                if avg_reward > self.best_avg_reward:
-                    self.best_avg_reward = avg_reward
-                    self.best_avg_completion = avg_completion
-                    self.logger.info(f"  *** 新最佳性能! 平均奖励: {avg_reward:.2f}, 平均完成: {avg_completion:.1f} ***")
-
-                    # 保存最佳模型
-                    if self.use_rl_low_level:
-                        self.low_level_controller.save_models("models", prefix="rl_low_level_best")
 
                 self.logger.info("")
             
@@ -382,6 +514,16 @@ class TrainingManager:
         self.logger.info(f"  平均完成时间(到完成下料): {np.mean(self.episode_avg_completion_times):.2f}秒")
         self.logger.info(f"  最佳平均奖励: {self.best_avg_reward:.2f}")
         self.logger.info(f"  最佳平均完成: {self.best_avg_completion:.1f}")
+
+        # 新增：最佳评估奖励
+        self.logger.info(f"  最佳测试奖励: {self.best_eval_reward:.2f}")
+
+        # 新增：loss统计(仅在使用RL时)
+        if self.use_rl_low_level and self.episode_actor_losses:
+            self.logger.info(f"  平均Actor Loss: {np.mean(self.episode_actor_losses):.4f}")
+            self.logger.info(f"  平均Critic Loss: {np.mean(self.episode_critic_losses):.4f}")
+            self.logger.info(f"  平均Entropy: {np.mean(self.episode_entropies):.4f}")
+
         self.logger.info("")
         
         # 保存评估统计
@@ -404,6 +546,13 @@ class TrainingManager:
             'episode_times': [float(x) for x in self.episode_times],
             'best_avg_reward': float(self.best_avg_reward),
             'best_avg_completion': float(self.best_avg_completion),
+
+            # 新增字段
+            'best_eval_reward': float(self.best_eval_reward),
+            'episode_actor_losses': [float(x) for x in self.episode_actor_losses],
+            'episode_critic_losses': [float(x) for x in self.episode_critic_losses],
+            'episode_entropies': [float(x) for x in self.episode_entropies],
+
             'config': {
                 'num_episodes': self.num_episodes,
                 'episode_duration': EPISODE_DURATION,

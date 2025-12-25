@@ -213,9 +213,18 @@ class Environment:
         self.completed_cargo_list = []  # 保存已完成货物的详细信息
         self.safety_violations = []  # 记录本次step的安全违例车辆ID
     
-    def reset(self):
-        """重置环境"""
-        self.__init__(seed=42)
+    def reset(self, seed: int = None):
+        """重置环境，支持可选seed
+
+        Args:
+            seed: 随机种子，None时使用随机值
+
+        Returns:
+            初始观测
+        """
+        if seed is None:
+            seed = np.random.randint(0, 100000)
+        self.__init__(seed=seed)
         return self._get_observation()
     
     def _normalize_position(self, pos: float) -> float:

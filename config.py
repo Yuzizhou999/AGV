@@ -62,3 +62,7 @@ MAX_STEPS_PER_EPISODE = int(EPISODE_DURATION / LOW_LEVEL_CONTROL_INTERVAL)  # �
 TRAIN_FREQUENCY = 10  # 每N步训练一次神经网络
 TARGET_UPDATE_FREQUENCY = 100  # 每N步更新目标网络
 SAVE_FREQUENCY = 50  # 每N个episode保存一次模型
+
+# ========== 评估配置 ==========
+EVAL_SEED = 42  # 固定测试seed
+EVAL_INTERVAL = 10  # 每N个episode评估一次

@@ -268,10 +268,10 @@ class PPOAgent:
         
         # 计算优势和回报
         advantages, returns = self.compute_gae(next_value)
-        
+
         # 标准化优势
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-        
+
         # 转换为张量
         obs = torch.FloatTensor(np.array(self.buffer['obs'])).to(self.device)
         actions = torch.FloatTensor(np.array(self.buffer['actions'])).to(self.device)
