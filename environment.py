@@ -372,9 +372,10 @@ class Environment:
                         vehicle.slot_operation_end_time[i] = 0
     
     def _check_safety_distance(self, vehicle_id: int, new_velocity: float) -> bool:
-        """检查是否满足安全距离约束
+        """检查是否满足安全距离约束（简化版）
         
-        考虑其他车辆可能的加速/减速情况，检查最坏情况下的距离。
+        只检查本车新位置到其他车辆当前位置的距离。
+        责任分离：假设其他车辆的控制器也会遵守安全距离，不预测其行为。
         
         Args:
             vehicle_id: 要检查的车辆ID
@@ -384,43 +385,36 @@ class Environment:
             bool: 如果满足安全距离约束返回True，否则返回False
         """
         vehicle = self.vehicles[vehicle_id]
-        # 本车在下一时间步的位置
-        new_position = self._normalize_position(vehicle.position + new_velocity * LOW_LEVEL_CONTROL_INTERVAL)
+        new_position = self._normalize_position(
+            vehicle.position + new_velocity * LOW_LEVEL_CONTROL_INTERVAL
+        )
         
         for other_id, other_vehicle in self.vehicles.items():
             if other_id == vehicle_id:
                 continue
             
-            # 计算其他车辆在下一时间步可能的位置范围
-            # 最坏情况1：其他车以最大加速度加速
-            other_max_velocity = min(MAX_SPEED, other_vehicle.velocity + MAX_ACCELERATION * LOW_LEVEL_CONTROL_INTERVAL)
-            other_max_position = self._normalize_position(other_vehicle.position + other_max_velocity * LOW_LEVEL_CONTROL_INTERVAL)
+            # 计算沿顺时针方向到其他车辆的距离
+            distance = self._forward_distance(new_position, other_vehicle.position)
             
-            # 最坏情况2：其他车以最大减速度减速（或维持当前位置）
-            other_min_velocity = max(0, other_vehicle.velocity - MAX_ACCELERATION * LOW_LEVEL_CONTROL_INTERVAL)
-            other_min_position = self._normalize_position(other_vehicle.position + other_min_velocity * LOW_LEVEL_CONTROL_INTERVAL)
-            
-            # 当前其他车的位置（基准）
-            other_current_position = other_vehicle.position
-            
-            # 计算本车到其他车可能位置的最小距离
-            # 考虑三种情况：其他车最大位置、最小位置、当前位置
-            min_distance = float('inf')
-            
-            for other_check_position in [other_current_position, other_max_position, other_min_position]:
-                # 计算沿行驶方向的距离（顺时针）
-                if new_position <= other_check_position:
-                    distance = other_check_position - new_position
-                else:
-                    distance = TRACK_LENGTH - new_position + other_check_position
-                
-                min_distance = min(min_distance, distance)
-            
-            # 检查最坏情况下是否满足安全距离
-            if min_distance < SAFETY_DISTANCE:
+            if distance < SAFETY_DISTANCE:
                 return False
         
         return True
+    
+    def _forward_distance(self, from_pos: float, to_pos: float) -> float:
+        """计算从 from_pos 到 to_pos 的顺时针距离（环形轨道）
+        
+        Args:
+            from_pos: 起始位置
+            to_pos: 目标位置
+        
+        Returns:
+            float: 顺时针方向的距离
+        """
+        if to_pos >= from_pos:
+            return to_pos - from_pos
+        else:
+            return TRACK_LENGTH - from_pos + to_pos
     
     def _execute_high_level_action(self, action: Dict) -> List[int]:
         """执行高层动作：任务分配和流向决策
