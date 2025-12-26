@@ -237,7 +237,7 @@ class TrainingManager:
 
             # 低层控制(使用确定性策略)
             if self.use_rl_low_level:
-                low_level_actions = self.low_level_controller.compute_actions(deterministic=True)
+                low_level_actions = self.low_level_controller.compute_actions(deterministic=False)
             else:
                 low_level_actions = self.low_level_controller.compute_actions()
 
@@ -305,10 +305,10 @@ class TrainingManager:
             episode_reward += reward
             step_count += 1
             self.total_steps += 1
-            
-            # 如果使用自定义PPO，存储转移
+
+            # 如果使用自定义PPO，存储转移并传递环境奖励（奖励统一）
             if self.use_rl_low_level and self.use_custom_ppo:
-                self.low_level_controller.store_transitions(done=done)
+                self.low_level_controller.store_transitions(done=done, env_reward=reward)
             
             # 更新上一步信息
             obs = next_obs

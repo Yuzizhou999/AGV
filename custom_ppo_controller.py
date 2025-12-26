@@ -146,13 +146,80 @@ class RLLowLevelObservation:
 
 class RLLowLevelReward:
     """
-    底层智能体奖励函数
-    与原rl_low_level_agent.py中的实现相同
+    底层智能体奖励函数（密集奖励版本）
+    学习启发式控制器的物理运动规划逻辑，将稀疏奖励转化为密集信号
     """
 
     @staticmethod
+    def _compute_ideal_speed(distance: float, current_velocity: float,
+                            target_velocity: float = SPEED_TOLERANCE / 2) -> float:
+        """
+        计算给定距离下的理想速度（学习启发式的运动规划）
+
+        物理意义：
+        - 如果当前速度已经需要很长距离才能停下，说明速度过快，应该减速
+        - 如果距离充足，可以加速到最大速度
+        - 这模拟了启发式控制器的三段式规划逻辑
+
+        Args:
+            distance: 到目标的距离（米）
+            current_velocity: 当前速度（米/秒）
+            target_velocity: 目标位置期望的最终速度（米/秒）
+
+        Returns:
+            ideal_speed: 理想速度（米/秒）
+        """
+        a = MAX_ACCELERATION
+        v_max = MAX_SPEED
+        v_target = target_velocity
+
+        # 计算从当前速度减速到目标速度所需的距离
+        if current_velocity > v_target:
+            decel_distance_needed = (current_velocity ** 2 - v_target ** 2) / (2 * a)
+        else:
+            decel_distance_needed = 0.0
+
+        # 如果需要的减速距离已经接近或超过剩余距离，说明速度太快
+        if decel_distance_needed >= distance * 0.9:  # 留10%安全余量
+            # 计算能安全停下的最大速度
+            ideal_speed = np.sqrt(max(0, 2 * a * distance + v_target ** 2))
+        else:
+            # 距离充足，可以保持较高速度
+            # 但不能超过物理上能安全停下的速度上限
+            v_allowed = np.sqrt(2 * a * distance + v_target ** 2)
+            ideal_speed = min(v_max, v_allowed)
+
+        return ideal_speed
+
+    @staticmethod
+    def _compute_brake_distance(velocity: float, target_velocity: float = SPEED_TOLERANCE / 2) -> float:
+        """
+        计算从当前速度减速到目标速度所需的距离
+
+        物理公式：s = (v^2 - v_target^2) / (2*a)
+
+        Args:
+            velocity: 当前速度（米/秒）
+            target_velocity: 目标速度（米/秒）
+
+        Returns:
+            brake_distance: 刹车距离（米）
+        """
+        if velocity <= target_velocity:
+            return 0.0
+        return (velocity ** 2 - target_velocity ** 2) / (2 * MAX_ACCELERATION)
+
+    @staticmethod
     def compute(env, vehicle_id: int, action: float, prev_state: Dict) -> float:
-        """计算单步奖励"""
+        """
+        计算单步奖励（密集奖励版本）
+
+        新增密集奖励项：
+        1. 全程理想速度匹配奖励（不再局限于距离<5m）
+        2. 进度奖励（持续正反馈）
+        3. 减速时机奖励（学习何时开始减速）
+        4. 速度上限约束奖励（防止超调）
+        """
         vehicle = env.vehicles[vehicle_id]
         reward = 0.0
 
@@ -169,26 +236,66 @@ class RLLowLevelReward:
                         target_position = station.position
                         break
 
-        # 目标相关奖励
+        # ============ 目标相关奖励（原有+新增密集奖励） ============
         if target_position is not None:
             distance = vehicle.distance_to(target_position)
             prev_distance = prev_state.get('distance_to_target', distance)
+            v_current = vehicle.velocity
+            v_target = SPEED_TOLERANCE / 2  # 目标位置期望的最终速度
 
-            # 接近目标奖励
-            distance_reward = (prev_distance - distance) * 0.1
+            # --- 原有奖励1: 接近目标奖励（保持，增加权重） ---
+            distance_reward = (prev_distance - distance) * 0.2  # 从0.1提升到0.2
             reward += distance_reward
 
-            # 速度匹配奖励
-            if distance < 5.0:
-                expected_velocity = min(distance / 5.0 * MAX_SPEED, MAX_SPEED)
-                velocity_error = abs(vehicle.velocity - expected_velocity)
-                reward += -0.5 * velocity_error
+            # --- 新增密集奖励1: 全程理想速度匹配奖励 ---
+            # 物理意义：根据当前距离，车辆应该有一个"理想速度"
+            # 远距离时理想速度接近最大速度，近距离时理想速度应该降低
+            ideal_speed = RLLowLevelReward._compute_ideal_speed(distance, v_current, v_target)
+            speed_error = abs(v_current - ideal_speed)
+            ideal_speed_reward = -0.8 * speed_error  # 强信号，鼓励速度匹配
+            reward += ideal_speed_reward
 
-            # 对齐成功奖励
+            # --- 新增密集奖励2: 进度奖励 ---
+            # 物理意义：奖励向目标移动的持续进度，不需要等到对齐才给奖励
+            # 将稀疏的"对齐成功+10"分解为连续的进度奖励
+            initial_distance = prev_state.get('initial_distance_to_target', distance)
+            if distance > 0:
+                progress = max(0, 1.0 - distance / max(initial_distance, 1.0))
+                prev_progress = prev_state.get('progress', 0.0)
+                progress_delta = progress - prev_progress
+                progress_reward = progress_delta * 8.0  # 接近对齐时累计可达约8分
+                reward += progress_reward
+                prev_state['progress'] = progress
+                prev_state['initial_distance_to_target'] = initial_distance
+
+            # --- 新增密集奖励3: 减速时机奖励 ---
+            # 物理意义：在物理上最优的位置开始减速（学习启发式的阶段判断）
+            brake_distance = RLLowLevelReward._compute_brake_distance(v_current, v_target)
+
+            # 如果当前距离接近理想减速点，且速度较高，鼓励减速动作
+            # action > 0表示加速，action < 0表示减速（归一化到[-1,1]）
+            if distance <= brake_distance + 2.0 and distance >= brake_distance - 1.0:
+                # 在减速窗口内
+                if v_current > v_target + 0.5:  # 速度还比较高
+                    # 动作是归一化的加速度，负值表示减速
+                    if action < 0:  # 减速动作
+                        brake_timing_reward = 1.0 * abs(action)  # 减速力度越大奖励越高
+                    else:  # 加速动作（错误）
+                        brake_timing_reward = -0.5 * action  # 惩罚在该减速时加速
+                    reward += brake_timing_reward
+
+            # --- 新增密集奖励4: 速度上限约束奖励 ---
+            # 物理意义：给定距离，存在一个最大容许速度，超过必然会超调
+            v_max_allowed = min(MAX_SPEED, np.sqrt(2 * MAX_ACCELERATION * distance + v_target ** 2))
+            if v_current > v_max_allowed:
+                overspeed_penalty = -3.0 * (v_current - v_max_allowed) ** 2  # 二次惩罚，超速越多惩罚越重
+                reward += overspeed_penalty
+
+            # --- 原有奖励: 对齐成功奖励（保留，作为最终确认奖励） ---
             if vehicle.is_aligned_with(target_position):
-                reward += 10.0
+                reward += 10.0  # 保持原有的对齐奖励作为最终成功信号
 
-        # 安全距离奖励
+        # ============ 安全距离奖励（保持原有逻辑） ============
         front_vehicle = RLLowLevelObservation._find_front_vehicle(env, vehicle_id)
         if front_vehicle is not None:
             front_distance = vehicle.distance_to(front_vehicle.position)
@@ -198,10 +305,10 @@ class RLLowLevelReward:
             elif front_distance < SAFETY_DISTANCE * 2:
                 reward += -0.5 * (SAFETY_DISTANCE * 2 - front_distance)
 
-        # 平滑控制奖励
+        # ============ 平滑控制奖励（保持原有逻辑） ============
         reward += -0.01 * abs(action)
 
-        # 上下料静止奖励
+        # ============ 上下料静止奖励（保持原有逻辑） ============
         if vehicle.is_loading_unloading:
             if vehicle.velocity < SPEED_TOLERANCE:
                 reward += 0.5
