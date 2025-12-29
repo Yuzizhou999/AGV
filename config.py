@@ -8,7 +8,7 @@ MAX_VEHICLES = 2  # 车辆数量
 MAX_SPEED = 5.0  # 最大速度 (单位/秒)
 MAX_ACCELERATION = 1.0  # 最大加速度
 SAFETY_DISTANCE = 2.0  # 安全距离
-SPEED_TOLERANCE = 0.1  # 对齐判定的速度容差，车辆速度必须≤此值才能开始上下料
+SPEED_TOLERANCE = 1  # 对齐判定的速度容差，车辆速度必须≤此值才能开始上下料
 
 # ========== 上料口配置 ==========
 NUM_LOADING_STATIONS = 2  # 上料口数量
@@ -31,7 +31,7 @@ LOADING_TIME = 15.0  # 单工位上料耗时(秒)，根据project.md要求
 UNLOADING_TIME = 15.0  # 单工位下料耗时(秒)，根据project.md要求
 
 # ========== 仿真配置 ==========
-EPISODE_DURATION = 3600  # 仿真时长8小时，足够产生有意义的训练数据
+EPISODE_DURATION = 8 * 3600  # 仿真时长8小时，足够产生有意义的训练数据
 HIGH_LEVEL_DECISION_INTERVAL = 1.0  # 高层决策时间间隔(秒)
 LOW_LEVEL_CONTROL_INTERVAL = 0.5  # 低层控制时间间隔(秒)，0.5秒保证控制精度
 

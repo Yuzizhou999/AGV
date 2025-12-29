@@ -358,12 +358,13 @@ class CustomPPOController:
         
         # 用于存储上一步的状态信息
         self.prev_states = {vid: {} for vid in range(MAX_VEHICLES)}
-        
-        print(f"✓ 使用自定义PPO底层控制器（不依赖SB3）")
+
+        print(f"[OK] 使用自定义PPO底层控制器（不依赖SB3）")
+        print(f"  [!] 奖励统一：环境奖励 = 任务奖励 + sum(底层运动奖励)")
 
     def compute_actions(self, deterministic=False) -> Dict[int, float]:
         """
-        计算所有车辆的控制动作，并存储经验到缓冲区
+        计算所有车辆的控制动作（仅选择动作，不计算奖励）
 
         Args:
             deterministic: 是否使用确定性策略
@@ -372,36 +373,80 @@ class CustomPPOController:
             {vehicle_id: acceleration} 加速度字典
         """
         actions = {}
-        
+
+        # 临时存储，供compute_and_store_rewards()使用
+        if not hasattr(self, '_temp_transitions'):
+            self._temp_transitions = {}
+
         for vehicle_id in self.env.vehicles.keys():
             # 获取观测
             obs = RLLowLevelObservation.build(self.env, vehicle_id)
-            
+
             # 选择动作
             action, value, log_prob = self.agents[vehicle_id].select_action(obs, deterministic)
-            
+
             # 动作是归一化的 [-1, 1]，需要反归一化到实际加速度
             acceleration = float(action[0]) * MAX_ACCELERATION
             actions[vehicle_id] = acceleration
-            
-            # 计算奖励
-            reward = RLLowLevelReward.compute(
-                self.env, vehicle_id, acceleration, self.prev_states[vehicle_id]
-            )
-            
-            # 存储经验（在下一步调用时存储，因为需要知道done）
-            # 这里先临时保存
-            if not hasattr(self, '_temp_transitions'):
-                self._temp_transitions = {}
-            
+
+            # 临时存储obs, action, value, log_prob
             self._temp_transitions[vehicle_id] = {
                 'obs': obs,
                 'action': action,
-                'reward': reward,
+                'acceleration': acceleration,
                 'value': value,
                 'log_prob': log_prob
             }
-            
+
+        return actions
+    
+    def compute_and_store_rewards(self, done=False, env_task_reward=0.0) -> float:
+        """
+        计算底层运动奖励，结合环境任务奖励，存储到缓冲区
+
+        职责分离（方案C）：
+        - 环境负责：任务奖励（完成货物、等待惩罚等）
+        - 底层负责：运动奖励（速度质量、对齐、安全等）
+        - 总奖励 = 环境任务奖励 + sum(底层运动奖励)
+
+        Args:
+            done: episode是否结束
+            env_task_reward: 环境的任务奖励
+
+        Returns:
+            total_reward: 总奖励（环境任务奖励 + 所有底层运动奖励之和）
+        """
+        if not hasattr(self, '_temp_transitions'):
+            return env_task_reward
+
+        total_low_level_reward = 0.0
+
+        for vehicle_id, transition in self._temp_transitions.items():
+            # 计算底层运动奖励（密集奖励 - RLLowLevelReward）
+            low_level_reward = RLLowLevelReward.compute(
+                self.env,
+                vehicle_id,
+                transition['acceleration'],
+                self.prev_states[vehicle_id]
+            )
+
+            total_low_level_reward += low_level_reward
+
+            # 每辆车的最终奖励 = 底层运动奖励 + 环境任务奖励的平均分配
+            # 这样每个车辆都能感知到任务完成的好处
+            num_vehicles = len(self.env.vehicles)
+            final_reward = low_level_reward + (env_task_reward / max(num_vehicles, 1))
+
+            # 存储到缓冲区
+            self.agents[vehicle_id].store_transition(
+                obs=transition['obs'],
+                action=transition['action'],
+                reward=final_reward,
+                value=transition['value'],
+                log_prob=transition['log_prob'],
+                done=done
+            )
+
             # 更新状态信息
             vehicle = self.env.vehicles[vehicle_id]
             if vehicle.assigned_tasks:
@@ -409,30 +454,11 @@ class CustomPPOController:
                 self.prev_states[vehicle_id]['distance_to_target'] = vehicle.distance_to(target_pos)
             else:
                 self.prev_states[vehicle_id]['distance_to_target'] = 0.0
-        
-        return actions
-    
-    def store_transitions(self, done=False):
-        """
-        将临时存储的转移存入各智能体的缓冲区
-        
-        Args:
-            done: episode是否结束
-        """
-        if not hasattr(self, '_temp_transitions'):
-            return
-        
-        for vehicle_id, transition in self._temp_transitions.items():
-            self.agents[vehicle_id].store_transition(
-                obs=transition['obs'],
-                action=transition['action'],
-                reward=transition['reward'],
-                value=transition['value'],
-                log_prob=transition['log_prob'],
-                done=done
-            )
-        
+
         self._temp_transitions = {}
+
+        # 返回总奖励：环境任务奖励 + 所有底层运动奖励
+        return env_task_reward + total_low_level_reward
     
     def update_policies(self):
         """

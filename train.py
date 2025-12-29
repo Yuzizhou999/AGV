@@ -284,12 +284,8 @@ class TrainingManager:
         
         while self.env.current_time < EPISODE_DURATION:
             # 高层决策（事件驱动）
-            high_level_action = None
-            
-            if self.env.current_time >= next_high_level_decision:
-                # 使用启发式控制器计算高层动作
-                high_level_action = self.high_level_controller.compute_action(obs)
-                next_high_level_decision = self.env.current_time + HIGH_LEVEL_DECISION_INTERVAL
+            high_level_action = self.high_level_controller.compute_action(obs)
+            next_high_level_decision = self.env.current_time + HIGH_LEVEL_DECISION_INTERVAL
             
             # 低层控制
             if self.use_rl_low_level:
@@ -301,14 +297,22 @@ class TrainingManager:
                 low_level_actions = self.low_level_controller.compute_actions()
             
             # 执行一步
-            next_obs, reward, done = self.env.step(high_level_action, low_level_actions)
+            next_obs, env_task_reward, done = self.env.step(high_level_action, low_level_actions)
+
+            # 如果使用自定义PPO，计算底层运动奖励并合并（奖励统一：方案C）
+            if self.use_rl_low_level and self.use_custom_ppo:
+                # 总奖励 = 环境任务奖励 + sum(底层运动奖励)
+                reward = self.low_level_controller.compute_and_store_rewards(
+                    done=done,
+                    env_task_reward=env_task_reward
+                )
+            else:
+                # 不使用自定义PPO时，直接使用环境奖励
+                reward = env_task_reward
+
             episode_reward += reward
             step_count += 1
             self.total_steps += 1
-
-            # 如果使用自定义PPO，存储转移并传递环境奖励（奖励统一）
-            if self.use_rl_low_level and self.use_custom_ppo:
-                self.low_level_controller.store_transitions(done=done, env_reward=reward)
             
             # 更新上一步信息
             obs = next_obs
