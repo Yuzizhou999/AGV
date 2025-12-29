@@ -358,10 +358,10 @@ class Environment:
                 self.safety_violations.append(vehicle_id)  # 记录违例车辆
                 new_velocity = 0.0  # 强制停止
 
+            # 更新位置（使用平均速度计算位移，物理精确）
+            old_velocity = vehicle.velocity
             vehicle.velocity = new_velocity
-
-            # 更新位置
-            displacement = vehicle.velocity * LOW_LEVEL_CONTROL_INTERVAL
+            displacement = (old_velocity + new_velocity) / 2 * LOW_LEVEL_CONTROL_INTERVAL
             vehicle.position = self._normalize_position(vehicle.position + displacement)
 
             # 更新工位操作时间
