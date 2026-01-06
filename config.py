@@ -8,7 +8,7 @@ MAX_VEHICLES = 2  # 车辆数量
 MAX_SPEED = 5.0  # 最大速度 (单位/秒)
 MAX_ACCELERATION = 1.0  # 最大加速度
 SAFETY_DISTANCE = 2.0  # 安全距离
-SPEED_TOLERANCE = 1  # 对齐判定的速度容差，车辆速度必须≤此值才能开始上下料
+SPEED_TOLERANCE = 0.1  # 对齐判定的速度容差，车辆速度必须≤此值才能开始上下料
 
 # ========== 上料口配置 ==========
 NUM_LOADING_STATIONS = 2  # 上料口数量
@@ -55,6 +55,12 @@ EPSILON_END = 0.05  # 最终探索率，保留一定探索
 EPSILON_DECAY = 0.998  # 探索率衰减，更慢衰减以充分探索
 REPLAY_BUFFER_SIZE = 100000  # 经验回放缓冲区大小
 MIN_REPLAY_SIZE = 1000  # 开始训练前的最小经验数量
+
+# ========== 学习率调度器配置 ==========
+LR_SCHEDULER_ENABLED = True  # 是否启用学习率调度器
+LR_WARMUP_EPISODES = 10  # 预热阶段的episode数（lr从0逐渐升到base_value）
+LR_FINAL_VALUE = 1e-5  # 最终学习率（训练结束时的lr）
+LR_START_WARMUP_VALUE = 1e-6  # 预热起始学习率
 
 # ========== 训练配置 ==========
 NUM_EPISODES = 500  # 训练轮数

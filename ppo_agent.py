@@ -9,7 +9,59 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 from typing import Dict, List, Tuple
+from torch.optim.lr_scheduler import _LRScheduler
 from config import *
+
+
+class WarmCosineScheduler(_LRScheduler):
+    """
+    带预热的余弦学习率调度器
+
+    特点:
+    1. 预热阶段: lr从start_warmup_value线性增长到base_value
+    2. 余弦衰减: lr按余弦曲线从base_value平滑降至final_value
+
+    Args:
+        optimizer: PyTorch优化器
+        base_value: 预热结束时的学习率（通常是初始LEARNING_RATE）
+        final_value: 训练结束时的最终学习率
+        total_iters: 总迭代次数（训练的总episode数）
+        warmup_iters: 预热迭代次数（预热的episode数）
+        start_warmup_value: 预热起始学习率
+    """
+
+    def __init__(
+        self,
+        optimizer,
+        base_value,
+        final_value,
+        total_iters,
+        warmup_iters=0,
+        start_warmup_value=0,
+    ):
+        self.final_value = final_value
+        self.total_iters = total_iters
+
+        # 预热阶段: 从start_warmup_value线性增长到base_value
+        warmup_schedule = np.linspace(start_warmup_value, base_value, warmup_iters)
+
+        # 余弦衰减阶段: 从base_value平滑降至final_value
+        iters = np.arange(total_iters - warmup_iters)
+        schedule = final_value + 0.5 * (base_value - final_value) * (
+            1 + np.cos(np.pi * iters / len(iters))
+        )
+
+        # 拼接完整的lr调度表
+        self.schedule = np.concatenate((warmup_schedule, schedule))
+
+        super(WarmCosineScheduler, self).__init__(optimizer)
+
+    def get_lr(self):
+        """返回当前学习率"""
+        if self.last_epoch >= self.total_iters:
+            return [self.final_value for base_lr in self.base_lrs]
+        else:
+            return [self.schedule[self.last_epoch] for base_lr in self.base_lrs]
 
 
 class ActorCritic(nn.Module):
@@ -122,12 +174,13 @@ class PPOAgent:
     """
     
     def __init__(self, obs_dim: int, action_dim: int, device='cpu',
-                 lr=3e-4, gamma=0.99, gae_lambda=0.95, 
+                 lr=3e-4, gamma=0.99, gae_lambda=0.95,
                  clip_epsilon=0.2, value_coef=0.5, entropy_coef=0.01,
-                 max_grad_norm=0.5, n_epochs=10, batch_size=64):
+                 max_grad_norm=0.5, n_epochs=10, batch_size=64,
+                 total_episodes=NUM_EPISODES):
         """
         初始化PPO智能体
-        
+
         Args:
             obs_dim: 观测空间维度
             action_dim: 动作空间维度
@@ -141,6 +194,7 @@ class PPOAgent:
             max_grad_norm: 梯度裁剪阈值
             n_epochs: 每次更新训练的轮数
             batch_size: 批量大小
+            total_episodes: 总训练episode数（用于lr scheduler）
         """
         self.device = device
         self.gamma = gamma
@@ -151,13 +205,26 @@ class PPOAgent:
         self.max_grad_norm = max_grad_norm
         self.n_epochs = n_epochs
         self.batch_size = batch_size
-        
+
         # 创建网络
         self.policy = ActorCritic(obs_dim, action_dim).to(device)
-        
+
         # 创建优化器
         self.optimizer = optim.Adam(self.policy.parameters(), lr=lr)
-        
+
+        # 创建学习率调度器（带预热的余弦衰减）
+        if LR_SCHEDULER_ENABLED:
+            self.scheduler = WarmCosineScheduler(
+                optimizer=self.optimizer,
+                base_value=LEARNING_RATE,  # 预热结束时的lr
+                final_value=LR_FINAL_VALUE,  # 训练结束时的lr
+                total_iters=total_episodes,  # 总episode数
+                warmup_iters=LR_WARMUP_EPISODES,  # 预热episode数
+                start_warmup_value=LR_START_WARMUP_VALUE  # 预热起始lr
+            )
+        else:
+            self.scheduler = None
+
         # 经验缓冲区
         self.reset_buffer()
     
@@ -334,14 +401,18 @@ class PPOAgent:
         
         # 清空缓冲区
         self.reset_buffer()
-        
+
+        # 更新学习率调度器（每个episode调用一次）
+        if self.scheduler is not None:
+            self.scheduler.step()
+
         # 返回统计信息
         stats = {
             'policy_loss': total_policy_loss / max(n_updates, 1),
             'value_loss': total_value_loss / max(n_updates, 1),
             'entropy': total_entropy / max(n_updates, 1)
         }
-        
+
         return stats
     
     def save(self, path: str):

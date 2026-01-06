@@ -123,7 +123,8 @@ class TrainingManager:
                 self.low_level_controller = CustomPPOController(
                     self.env,
                     model_path=rl_model_path,
-                    device=self.device
+                    device=self.device,
+                    total_episodes=self.num_episodes  # 传递总episode数
                 )
                 self.logger.info("✓ 使用自定义PPO底层控制器（不依赖SB3）")
             else:
@@ -186,23 +187,32 @@ class TrainingManager:
                         来自CustomPPOController.update_policies()的返回值
 
         Returns:
-            {'avg_policy_loss': float, 'avg_value_loss': float, 'avg_entropy': float}
+            {'avg_policy_loss': float, 'avg_value_loss': float, 'avg_entropy': float,
+             'current_lr': float}  # 添加当前学习率
         """
         if not train_stats:
             return {
                 'avg_policy_loss': 0.0,
                 'avg_value_loss': 0.0,
-                'avg_entropy': 0.0
+                'avg_entropy': 0.0,
+                'current_lr': 0.0
             }
 
         policy_losses = [s['policy_loss'] for s in train_stats.values()]
         value_losses = [s['value_loss'] for s in train_stats.values()]
         entropies = [s['entropy'] for s in train_stats.values()]
 
+        # 获取当前学习率（从第一个智能体获取，所有智能体lr相同）
+        current_lr = 0.0
+        if self.use_rl_low_level and self.use_custom_ppo:
+            first_agent = list(self.low_level_controller.agents.values())[0]
+            current_lr = first_agent.optimizer.param_groups[0]['lr']
+
         return {
             'avg_policy_loss': np.mean(policy_losses),
             'avg_value_loss': np.mean(value_losses),
-            'avg_entropy': np.mean(entropies)
+            'avg_entropy': np.mean(entropies),
+            'current_lr': current_lr
         }
 
     def evaluate(self, seed: int = None) -> Tuple[float, dict]:
@@ -444,7 +454,8 @@ class TrainingManager:
                 avg_loss = self.aggregate_loss(train_stats)
                 self.logger.info(f"  [训练] Loss: actor={avg_loss['avg_policy_loss']:.4f}, "
                                 f"critic={avg_loss['avg_value_loss']:.4f}, "
-                                f"entropy={avg_loss['avg_entropy']:.4f}")
+                                f"entropy={avg_loss['avg_entropy']:.4f}, "
+                                f"lr={avg_loss['current_lr']:.2e}")
 
             # 每EVAL_INTERVAL个episode评估
             if (episode + 1) % EVAL_INTERVAL == 0:

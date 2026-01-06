@@ -324,7 +324,8 @@ class CustomPPOController:
     直接从环境交互中收集经验并训练
     """
 
-    def __init__(self, env, model_path: Optional[str] = None, device='cpu'):
+    def __init__(self, env, model_path: Optional[str] = None, device='cpu',
+                 total_episodes: int = NUM_EPISODES):
         """
         初始化控制器
 
@@ -332,35 +333,39 @@ class CustomPPOController:
             env: AGV环境实例
             model_path: 模型路径（如果提供，将加载已训练模型）
             device: 'cpu' 或 'cuda'
+            total_episodes: 总训练episode数（用于lr scheduler）
         """
         self.env = env
         self.device = device
-        
+
         # 观测和动作维度
         self.obs_dim = 15  # 观测空间维度
         self.action_dim = 1  # 动作空间维度（加速度）
-        
+
         # 为每辆车创建PPO智能体
         self.agents = {}
         for vehicle_id in range(MAX_VEHICLES):
             self.agents[vehicle_id] = PPOAgent(
                 obs_dim=self.obs_dim,
                 action_dim=self.action_dim,
-                device=device
+                device=device,
+                total_episodes=total_episodes  # 传递总episode数给scheduler
             )
-            
+
             # 如果提供了模型路径，加载模型
             if model_path is not None:
                 agent_model_path = model_path.replace('.pth', f'_v{vehicle_id}.pth')
                 if os.path.exists(agent_model_path):
                     self.agents[vehicle_id].load(agent_model_path)
                     print(f"✓ 车辆{vehicle_id}加载模型: {agent_model_path}")
-        
+
         # 用于存储上一步的状态信息
         self.prev_states = {vid: {} for vid in range(MAX_VEHICLES)}
 
         print(f"[OK] 使用自定义PPO底层控制器（不依赖SB3）")
         print(f"  [!] 奖励统一：环境奖励 = 任务奖励 + sum(底层运动奖励)")
+        if LR_SCHEDULER_ENABLED:
+            print(f"  [!] 学习率调度器已启用: WarmCosine (预热{LR_WARMUP_EPISODES}ep, {LEARNING_RATE:.0e}→{LR_FINAL_VALUE:.0e})")
 
     def compute_actions(self, deterministic=False) -> Dict[int, float]:
         """
