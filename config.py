@@ -58,12 +58,12 @@ MIN_REPLAY_SIZE = 1000  # 开始训练前的最小经验数量
 
 # ========== 学习率调度器配置 ==========
 LR_SCHEDULER_ENABLED = True  # 是否启用学习率调度器
-LR_WARMUP_EPISODES = 10  # 预热阶段的episode数（lr从0逐渐升到base_value）
+LR_WARMUP_EPISODES = 1  # 预热阶段的episode数（lr从0逐渐升到base_value）
 LR_FINAL_VALUE = 1e-5  # 最终学习率（训练结束时的lr）
 LR_START_WARMUP_VALUE = 1e-6  # 预热起始学习率
 
 # ========== 训练配置 ==========
-NUM_EPISODES = 500  # 训练轮数
+NUM_EPISODES = 2  # 训练轮数（临时改为2用于测试）
 MAX_STEPS_PER_EPISODE = int(EPISODE_DURATION / LOW_LEVEL_CONTROL_INTERVAL)  # 每轮最大步数
 TRAIN_FREQUENCY = 10  # 每N步训练一次神经网络
 TARGET_UPDATE_FREQUENCY = 100  # 每N步更新目标网络
@@ -72,3 +72,6 @@ SAVE_FREQUENCY = 50  # 每N个episode保存一次模型
 # ========== 评估配置 ==========
 EVAL_SEED = 42  # 固定测试seed
 EVAL_INTERVAL = 10  # 每N个episode评估一次
+
+# ========== Step-based训练配置 ==========
+STEPS_PER_UPDATE = 2048  # PPO每N步更新一次（标准PPO配置）

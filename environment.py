@@ -212,6 +212,12 @@ class Environment:
         self.total_wait_time = 0.0
         self.completed_cargo_list = []  # 保存已完成货物的详细信息
         self.safety_violations = []  # 记录本次step的安全违例车辆ID
+
+        # 性能优化：双工位索引 - O(1)查询同站同车的货物
+        # 上料索引: {(vehicle_id, station_id, slot_idx): cargo_id}
+        self.loading_cargo_index = {}
+        # 下料索引: {(vehicle_id, station_id, slot_idx): cargo_id}
+        self.unloading_cargo_index = {}
     
     def reset(self, seed: int = None):
         """重置环境，支持可选seed
@@ -482,11 +488,15 @@ class Environment:
         """分配上料任务（只标记任务，实际上料在车辆对齐时执行）"""
         cargo = self.cargos[cargo_id]
         vehicle = self.vehicles[vehicle_id]
-        
+
         # 标记货物任务分配
         cargo.assigned_vehicle = vehicle_id
         cargo.assigned_vehicle_slot = slot_idx
-        
+
+        # 更新上料索引（性能优化：O(1)查询同站同车货物）
+        index_key = (vehicle_id, cargo.loading_station, slot_idx)
+        self.loading_cargo_index[index_key] = cargo_id
+
         # 在车辆任务队列中添加上料任务
         loading_station = self.loading_stations[cargo.loading_station]
         task = {
@@ -496,10 +506,10 @@ class Environment:
             'station_id': cargo.loading_station,
             'slot_idx': slot_idx
         }
-        
+
         # 避免重复添加任务
         task_exists = any(
-            t['type'] == 'loading' and t['cargo_id'] == cargo_id 
+            t['type'] == 'loading' and t['cargo_id'] == cargo_id
             for t in vehicle.assigned_tasks
         )
         if not task_exists:
@@ -540,21 +550,23 @@ class Environment:
                 cargo.picked_up_time = self.current_time  # 记录被取走的时间
                 vehicle.is_loading_unloading = True  # 锁定车辆移动
                 vehicle.velocity = 0.0  # 立即停止车辆
-                
-                # 检查是否可以启用双工位同时上料
-                # 条件：两个工位都有任务且都在同一个上料口
-                for other_cargo in self.cargos.values():
-                    if (other_cargo.id != cargo.id and
-                        other_cargo.assigned_vehicle == cargo.assigned_vehicle and
-                        other_cargo.loading_station == cargo.loading_station and
-                        other_cargo.current_location.startswith("IP_") and
-                        other_cargo.loading_start_time is None):
-                        # 找到另一个工位的货物，同时开始上料
-                        other_slot_idx = other_cargo.assigned_vehicle_slot
-                        if vehicle.slots[other_slot_idx] is None:
-                            other_cargo.loading_start_time = self.current_time
-                            other_cargo.picked_up_time = self.current_time
-                        break
+
+                # 【性能优化】检查是否可以启用双工位同时上料
+                # 优化前：O(m²) 遍历所有货物
+                # 优化后：O(1) 直接查询索引
+                other_slot_idx = 1 - slot_idx  # 另一个工位（0->1, 1->0）
+                other_index_key = (cargo.assigned_vehicle, cargo.loading_station, other_slot_idx)
+                other_cargo_id = self.loading_cargo_index.get(other_index_key)
+
+                if other_cargo_id is not None and other_cargo_id in self.cargos:
+                    other_cargo = self.cargos[other_cargo_id]
+                    # 检查另一个工位的货物是否也在等待上料
+                    if (other_cargo.current_location.startswith("IP_") and
+                        other_cargo.loading_start_time is None and
+                        vehicle.slots[other_slot_idx] is None):
+                        # 找到同站同车的另一个货物，同时开始上料
+                        other_cargo.loading_start_time = self.current_time
+                        other_cargo.picked_up_time = self.current_time
                 
                 continue  # 本轮只开始计时，下一轮再检查完成
             
@@ -589,10 +601,14 @@ class Environment:
                 cargo.loading_start_time = None
                 # 注意：不在这里解除锁定，统一在函数最后处理
                 picked_up_ids.append(cargo.id)  # 记录完成取货的货物
-                
+
+                # 【性能优化】清理上料索引
+                index_key = (cargo.assigned_vehicle, cargo.loading_station, slot_idx)
+                self.loading_cargo_index.pop(index_key, None)
+
                 # 从车辆任务队列中移除上料任务
                 vehicle.assigned_tasks = [
-                    t for t in vehicle.assigned_tasks 
+                    t for t in vehicle.assigned_tasks
                     if not (t['type'] == 'loading' and t['cargo_id'] == cargo.id)
                 ]
         

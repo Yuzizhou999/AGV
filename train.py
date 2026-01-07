@@ -241,13 +241,12 @@ class TrainingManager:
         while self.eval_env.current_time < EPISODE_DURATION:
             # 高层决策
             high_level_action = None
-            if self.eval_env.current_time >= next_high_level_decision:
-                high_level_action = self.eval_high_level_controller.compute_action(obs)
-                next_high_level_decision = self.eval_env.current_time + HIGH_LEVEL_DECISION_INTERVAL
+            high_level_action = self.eval_high_level_controller.compute_action(obs)
+            next_high_level_decision = self.eval_env.current_time + HIGH_LEVEL_DECISION_INTERVAL
 
             # 低层控制(使用确定性策略)
             if self.use_rl_low_level:
-                low_level_actions = self.low_level_controller.compute_actions(deterministic=False)
+                low_level_actions = self.low_level_controller.compute_actions(deterministic=True)
             else:
                 low_level_actions = self.low_level_controller.compute_actions()
 
@@ -292,7 +291,7 @@ class TrainingManager:
         # 高层决策时间管理
         next_high_level_decision = 0.0
         
-        while self.env.current_time < EPISODE_DURATION:
+        while self.env.current_time < EPISODE_DURATION // 4:
             # 高层决策（事件驱动）
             high_level_action = self.high_level_controller.compute_action(obs)
             next_high_level_decision = self.env.current_time + HIGH_LEVEL_DECISION_INTERVAL
