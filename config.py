@@ -47,7 +47,7 @@ REWARD_SPEED_CHANGE_PENALTY = -0.01  # 速度变化惩罚系数，降低
 
 # ========== 神经网络配置 ==========
 HIDDEN_DIM = 256  # 隐层维度，平衡表达能力和计算复杂度
-LEARNING_RATE = 3e-4  # 学习率，适当降低以稳定训练
+LEARNING_RATE = 1e-4  # 学习率，适当降低以稳定训练
 BATCH_SIZE = 64  # 批大小，增大以稳定梯度
 GAMMA = 0.99  # 折扣因子
 EPSILON_START = 1.0  # 初始探索率
@@ -63,7 +63,7 @@ LR_FINAL_VALUE = 1e-5  # 最终学习率（训练结束时的lr）
 LR_START_WARMUP_VALUE = 1e-6  # 预热起始学习率
 
 # ========== 训练配置 ==========
-NUM_EPISODES = 2  # 训练轮数（临时改为2用于测试）
+NUM_EPISODES = 200  # 训练轮数（临时改为2用于测试）
 MAX_STEPS_PER_EPISODE = int(EPISODE_DURATION / LOW_LEVEL_CONTROL_INTERVAL)  # 每轮最大步数
 TRAIN_FREQUENCY = 10  # 每N步训练一次神经网络
 TARGET_UPDATE_FREQUENCY = 100  # 每N步更新目标网络
