@@ -137,6 +137,8 @@ class ActorCritic(nn.Module):
             # 从正态分布采样
             dist = torch.distributions.Normal(action_mean, action_std)
             action = dist.sample()
+        # 环境侧会对加速度做clip；这里先把动作本身限制到[-1, 1]，保证“采样动作/记录动作/执行动作”一致
+        action = torch.clamp(action, -1.0, 1.0)
         
         # 计算对数概率
         dist = torch.distributions.Normal(action_mean, action_std)

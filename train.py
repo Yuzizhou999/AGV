@@ -234,6 +234,9 @@ class TrainingManager:
             self.low_level_controller.env = self.eval_env
 
         obs = self.eval_env.reset(seed=seed)
+        # 评估前同样重置自定义PPO的跨episode缓存，确保评估不受训练残留状态影响
+        if self.use_rl_low_level and self.use_custom_ppo:
+            self.low_level_controller.reset_episode()
         episode_reward = 0.0
         step_count = 0
         next_high_level_decision = 0.0
@@ -285,13 +288,16 @@ class TrainingManager:
              total_cargos, waiting_cargos, on_vehicle_cargos, train_stats)
         """
         obs = self.env.reset(seed=seed)
+        # 自定义PPO内部有跨episode缓存（用于密集奖励/特征），每回合必须重置，避免跨回合污染
+        if self.use_rl_low_level and self.use_custom_ppo:
+            self.low_level_controller.reset_episode()
         episode_reward = 0.0
         step_count = 0
         
         # 高层决策时间管理
         next_high_level_decision = 0.0
         
-        while self.env.current_time < EPISODE_DURATION // 4:
+        while self.env.current_time < EPISODE_DURATION:
             # 高层决策（事件驱动）
             high_level_action = self.high_level_controller.compute_action(obs)
             next_high_level_decision = self.env.current_time + HIGH_LEVEL_DECISION_INTERVAL

@@ -239,6 +239,13 @@ class RLLowLevelReward:
         # ============ 目标相关奖励（原有+新增密集奖励） ============
         if target_position is not None:
             distance = vehicle.distance_to(target_position)
+            # 目标切换时必须重置跨目标的缓存（进度/初始距离/上一步距离），否则会把旧目标的历史带进来污染奖励
+            prev_target_position = prev_state.get('target_position')
+            if prev_target_position is None or prev_target_position != target_position:
+                prev_state['target_position'] = target_position
+                prev_state['distance_to_target'] = distance
+                prev_state.pop('progress', None)
+                prev_state.pop('initial_distance_to_target', None)
             prev_distance = prev_state.get('distance_to_target', distance)
             v_current = vehicle.velocity
             v_target = SPEED_TOLERANCE / 2  # 目标位置期望的最终速度
@@ -366,6 +373,16 @@ class CustomPPOController:
         print(f"  [!] 奖励统一：环境奖励 = 任务奖励 + sum(底层运动奖励)")
         if LR_SCHEDULER_ENABLED:
             print(f"  [!] 学习率调度器已启用: WarmCosine (预热{LR_WARMUP_EPISODES}ep, {LEARNING_RATE:.0e}→{LR_FINAL_VALUE:.0e})")
+
+    def reset_episode(self) -> None:
+        """
+        重置跨episode缓存（密集奖励/进度等用）。
+        不重置会导致：新回合第一段时间的奖励带着上回合/上个目标的历史，训练信号变脏。
+        """
+        self.prev_states = {vid: {} for vid in range(MAX_VEHICLES)}
+        # 清理临时transition缓存，避免在切换环境/episode边界时残留
+        if hasattr(self, '_temp_transitions'):
+            self._temp_transitions = {}
 
     def compute_actions(self, deterministic=False) -> Dict[int, float]:
         """
