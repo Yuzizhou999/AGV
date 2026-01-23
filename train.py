@@ -15,8 +15,8 @@ import logging
 from config import *
 from environment import Environment
 from heuristic_high_level import HeuristicHighLevelController
+from heuristic_controller import HeuristicLowLevelController
 from agent_low_level import LowLevelAgent, LowLevelController
-from rl_low_level_agent import RLLowLevelController  # SB3的PPO控制器
 from custom_ppo_controller import CustomPPOController  # 自定义PPO控制器
 
 
@@ -75,7 +75,8 @@ class TrainingManager:
     def __init__(self, num_episodes: int = NUM_EPISODES, use_gpu: bool = False,
                  enable_visualization: bool = False, vis_update_interval: int = 10,
                  use_rl_low_level: bool = False, rl_model_path: str = None,
-                 use_custom_ppo: bool = True, logger: logging.Logger = None):
+                 use_custom_ppo: bool = True, use_heuristic_low_level: bool = True,
+                 logger: logging.Logger = None):
         """
         初始化训练管理器
 
@@ -95,6 +96,7 @@ class TrainingManager:
         self.vis_update_interval = vis_update_interval
         self.use_rl_low_level = use_rl_low_level
         self.use_custom_ppo = use_custom_ppo
+        self.use_heuristic_low_level = use_heuristic_low_level
         self.logger = logger if logger is not None else logging.getLogger("AGV_Training")
 
         # 初始化环境
@@ -117,6 +119,8 @@ class TrainingManager:
         self.eval_high_level_controller = HeuristicHighLevelController(self.eval_env)  # 评估环境专用控制器
 
         # 初始化底层控制器（根据参数选择）
+        # 非RL评估使用 eval_low_level_controller，避免评估时误用训练 env 计算动作
+        self.eval_low_level_controller = None
         if self.use_rl_low_level:
             if self.use_custom_ppo:
                 # 使用自定义PPO控制器（推荐）
@@ -128,13 +132,26 @@ class TrainingManager:
                 )
                 self.logger.info("✓ 使用自定义PPO底层控制器（不依赖SB3）")
             else:
-                # 使用SB3的PPO控制器
+                # 使用SB3的PPO控制器（可选依赖：stable_baselines3）
+                try:
+                    from rl_low_level_agent import RLLowLevelController  # SB3的PPO控制器
+                except (ModuleNotFoundError, ImportError) as e:
+                    raise ModuleNotFoundError(
+                        "未安装 stable_baselines3，无法使用 SB3 PPO 底层控制器。"
+                        "请安装 stable-baselines3，或使用默认的自定义PPO（不依赖SB3）。"
+                    ) from e
+
                 self.low_level_controller = RLLowLevelController(
                     self.env,
                     model_path=rl_model_path,
                     device=self.device
                 )
                 self.logger.info("✓ 使用SB3 PPO底层控制器")
+        elif self.use_heuristic_low_level:
+            # 使用启发式底层控制器（规则）
+            self.low_level_controller = HeuristicLowLevelController(self.env)
+            self.eval_low_level_controller = HeuristicLowLevelController(self.eval_env)
+            self.logger.info("✓ 使用启发式底层控制器（规则）")
         else:
             # 使用原有的DQN控制器
             sample_low_obs = self.env.get_low_level_observation(0)
@@ -142,7 +159,9 @@ class TrainingManager:
             low_level_action_dim = 3
             self.low_level_agent = LowLevelAgent(low_level_obs_dim, low_level_action_dim, self.device)
             self.low_level_controller = LowLevelController(self.low_level_agent, self.env)
-            self.logger.info("✓ 使用启发式底层控制器")
+            # 评估控制器复用同一个 agent，但绑定 eval_env，避免评估时误用训练 env 计算动作
+            self.eval_low_level_controller = LowLevelController(self.low_level_agent, self.eval_env)
+            self.logger.info("✓ 使用DQN底层控制器")
         
         # 统计信息
         self.episode_rewards = []
@@ -227,44 +246,51 @@ class TrainingManager:
         if seed is None:
             seed = EVAL_SEED
 
-        # 临时替换low_level_controller的环境引用（评估时使用eval_env）
+        # 选择评估用的底层控制器：
+        # - RL：复用训练用控制器（同一套参数），评估时临时切换 env 引用
+        # - 非RL：使用 eval_low_level_controller（避免评估误用训练 env 计算动作）
+        controller = self.low_level_controller if self.use_rl_low_level else self.eval_low_level_controller
+        if controller is None:
+            controller = self.low_level_controller
+
         original_env = None
-        if self.use_rl_low_level:
-            original_env = self.low_level_controller.env
-            self.low_level_controller.env = self.eval_env
+        if self.use_rl_low_level and hasattr(controller, 'env'):
+            original_env = controller.env
+            controller.env = self.eval_env
 
         obs = self.eval_env.reset(seed=seed)
-        # 评估前同样重置自定义PPO的跨episode缓存，确保评估不受训练残留状态影响
-        if self.use_rl_low_level and self.use_custom_ppo:
-            self.low_level_controller.reset_episode()
+        # 评估前重置控制器跨episode缓存/规划（若有），避免训练残留状态影响评估
+        if hasattr(controller, 'reset_episode'):
+            controller.reset_episode()
         episode_reward = 0.0
         step_count = 0
         next_high_level_decision = 0.0
 
-        while self.eval_env.current_time < EPISODE_DURATION:
-            # 高层决策
-            high_level_action = None
-            high_level_action = self.eval_high_level_controller.compute_action(obs)
-            next_high_level_decision = self.eval_env.current_time + HIGH_LEVEL_DECISION_INTERVAL
+        try:
+            while self.eval_env.current_time < EPISODE_DURATION:
+                # 高层决策
+                high_level_action = None
+                high_level_action = self.eval_high_level_controller.compute_action(obs)
+                next_high_level_decision = self.eval_env.current_time + HIGH_LEVEL_DECISION_INTERVAL
 
-            # 低层控制(使用确定性策略)
-            if self.use_rl_low_level:
-                low_level_actions = self.low_level_controller.compute_actions(deterministic=True)
-            else:
-                low_level_actions = self.low_level_controller.compute_actions()
+                # 低层控制(使用确定性策略)
+                if self.use_rl_low_level:
+                    low_level_actions = controller.compute_actions(deterministic=True)
+                else:
+                    low_level_actions = controller.compute_actions()
 
-            # 执行一步
-            next_obs, reward, done = self.eval_env.step(high_level_action, low_level_actions)
-            episode_reward += reward
-            step_count += 1
-            obs = next_obs
+                # 执行一步
+                next_obs, reward, done = self.eval_env.step(high_level_action, low_level_actions)
+                episode_reward += reward
+                step_count += 1
+                obs = next_obs
 
-            if done:
-                break
-
-        # 恢复原环境引用
-        if original_env is not None:
-            self.low_level_controller.env = original_env
+                if done:
+                    break
+        finally:
+            # 恢复原环境引用（仅 RL 模式需要）
+            if original_env is not None and hasattr(controller, 'env'):
+                controller.env = original_env
 
         # 收集统计信息
         stats = {
@@ -290,6 +316,9 @@ class TrainingManager:
         obs = self.env.reset(seed=seed)
         # 自定义PPO内部有跨episode缓存（用于密集奖励/特征），每回合必须重置，避免跨回合污染
         if self.use_rl_low_level and self.use_custom_ppo:
+            self.low_level_controller.reset_episode()
+        elif (not self.use_rl_low_level) and self.use_heuristic_low_level and hasattr(self.low_level_controller, 'reset_episode'):
+            # 启发式底层控制器存在跨episode运动规划缓存，需要每回合清空
             self.low_level_controller.reset_episode()
         episode_reward = 0.0
         step_count = 0
@@ -403,7 +432,11 @@ class TrainingManager:
         self.logger.info(f"上料口数: {NUM_LOADING_STATIONS}")
         self.logger.info(f"下料口数: {NUM_UNLOADING_STATIONS}")
         self.logger.info(f"高层控制: 启发式规则（最近距离分配）")
-        self.logger.info(f"底层控制: {'自定义PPO' if self.use_custom_ppo else 'SB3 PPO' if self.use_rl_low_level else '启发式控制器'}")
+        if self.use_rl_low_level:
+            low_level_desc = "自定义PPO" if self.use_custom_ppo else "SB3 PPO"
+        else:
+            low_level_desc = "启发式控制器（规则）" if self.use_heuristic_low_level else "DQN"
+        self.logger.info(f"底层控制: {low_level_desc}")
         self.logger.info("=" * 80)
         self.logger.info("")
         
@@ -553,6 +586,12 @@ class TrainingManager:
         """保存评估统计数据"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         stats_path = f"heuristic_evaluation_stats_{timestamp}.json"
+
+        # 记录真实的底层控制模式，避免后续分析被“写死字段”误导
+        if self.use_rl_low_level:
+            low_level_control = "custom_ppo" if self.use_custom_ppo else "sb3_ppo"
+        else:
+            low_level_control = "heuristic_rules" if self.use_heuristic_low_level else "dqn"
         
         # 保存评估统计
         stats = {
@@ -578,7 +617,7 @@ class TrainingManager:
                 'episode_duration': EPISODE_DURATION,
                 'control_interval': LOW_LEVEL_CONTROL_INTERVAL,
                 'high_level_control': 'heuristic_nearest_distance',
-                'low_level_control': 'heuristic_controller',
+                'low_level_control': low_level_control,
             }
         }
         
@@ -598,8 +637,39 @@ def main():
                        help='启用可视化（会显著降低训练速度）')
     parser.add_argument('--vis-interval', type=int, default=50,
                        help='可视化更新间隔（步数）')
-    parser.add_argument('--use-rl-low-level', action='store_false',
-                       help='使用RL底层控制器（PPO）代替启发式控制器')
+    # 默认：启发式底层（规则），即直接运行 `python train.py` 即为高/低层均启发式
+    parser.set_defaults(use_rl_low_level=False, heuristic_low_level=True)
+
+    parser.add_argument(
+        '--rl-low-level',
+        dest='use_rl_low_level',
+        action='store_true',
+        help='启用RL底层控制器（PPO）'
+    )
+    # 兼容历史参数：该参数名与实际行为相反（store_false），保留但修正文案
+    parser.add_argument(
+        '--use-rl-low-level',
+        dest='use_rl_low_level',
+        action='store_false',
+        help='[Deprecated] 禁用RL底层控制器（PPO）（默认已禁用）'
+    )
+    parser.add_argument(
+        '--no-rl-low-level',
+        dest='use_rl_low_level',
+        action='store_false',
+        help='禁用RL底层控制器（PPO）（默认）'
+    )
+    parser.add_argument(
+        '--heuristic-low-level',
+        action='store_true',
+        help='在非RL模式下使用启发式底层控制器（规则）（默认）'
+    )
+    parser.add_argument(
+        '--dqn-low-level',
+        dest='heuristic_low_level',
+        action='store_false',
+        help='在非RL模式下使用DQN底层控制器（关闭启发式规则）'
+    )
     parser.add_argument('--use-sb3-ppo', action='store_true',
                        help='使用Stable-Baselines3的PPO（默认使用自定义PPO）')
     parser.add_argument('--rl-model-path', type=str, default=None,
@@ -619,16 +689,25 @@ def main():
         logger.warning("⚠ 可视化已启用 - 训练速度会显著降低")
         logger.info(f"  可视化更新间隔: {args.vis_interval} 步")
 
+    # 解析底层控制模式
+    use_rl_low_level = args.use_rl_low_level
+    use_heuristic_low_level = args.heuristic_low_level
+    if use_rl_low_level:
+        # 明确：启用RL底层时，忽略非RL的启发式/DQN选项
+        use_heuristic_low_level = False
+
     # 打印控制器配置
-    if args.use_rl_low_level:
+    if use_rl_low_level:
         if args.use_sb3_ppo:
             logger.info("✓ 底层控制: RL智能体（Stable-Baselines3 PPO）")
         else:
             logger.info("✓ 底层控制: RL智能体（自定义PPO - 推荐）")
         if args.rl_model_path:
             logger.info(f"  加载模型: {args.rl_model_path}")
+    elif use_heuristic_low_level:
+        logger.info("✓ 底层控制: 启发式控制器（规则）")
     else:
-        logger.info("✓ 底层控制: 启发式控制器")
+        logger.info("✓ 底层控制: DQN")
 
     logger.info("")
 
@@ -638,9 +717,10 @@ def main():
         use_gpu=use_gpu,
         enable_visualization=False,
         vis_update_interval=args.vis_interval,
-        use_rl_low_level=args.use_rl_low_level,
+        use_rl_low_level=use_rl_low_level,
         rl_model_path=args.rl_model_path,
         use_custom_ppo=not args.use_sb3_ppo,  # 默认使用自定义PPO
+        use_heuristic_low_level=use_heuristic_low_level,
         logger=logger
     )
 

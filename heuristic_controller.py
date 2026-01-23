@@ -28,6 +28,21 @@ class HeuristicLowLevelController:
         # - cruise_distance: 匀速段距离
         # - cruise_speed: 巡航速度（可能是最大速度或更低）
         # - phase: 当前阶段 ('accel', 'cruise', 'decel', 'aligned')
+
+    def compute_actions(self, deterministic: bool = True) -> Dict[int, int]:
+        """
+        统一接口：与 train.py 的控制器调用约定保持一致。
+
+        启发式控制器本身是确定性的，不需要区分 deterministic=True/False。
+        这里保留 deterministic 参数只是为了兼容 PPO 控制器的接口，避免上层出现特殊情况分支。
+        """
+        _ = deterministic  # 兼容参数，占位不使用
+        return self.get_actions()
+
+    def reset_episode(self):
+        """每个 episode 开始前重置内部规划，避免跨 episode 残留。"""
+        for vehicle_id in self.vehicle_plans.keys():
+            self.vehicle_plans[vehicle_id] = None
     
     def get_actions(self) -> Dict[int, int]:
         """

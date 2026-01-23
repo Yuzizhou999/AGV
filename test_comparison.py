@@ -25,7 +25,8 @@ def test_comparison():
     manager_heuristic = TrainingManager(
         num_episodes=test_episodes,
         use_gpu=use_gpu,
-        use_rl_low_level=False
+        use_rl_low_level=False,
+        use_heuristic_low_level=True
     )
     manager_heuristic.train()
     heuristic_time = time.time() - start_time
