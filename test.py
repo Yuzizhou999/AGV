@@ -142,6 +142,48 @@ class TestEnvironment(unittest.TestCase):
         # 执行一步后应该超过EPISODE_DURATION
         self.assertTrue(self.env.current_time >= EPISODE_DURATION or done)
 
+    def test_assign_loading_rejects_double_reservation(self):
+        """测试：同一车辆工位不允许被多个未完成货物同时预占（避免幽灵分配）"""
+        # 手工构造两个在不同上料口等待的货物
+        cargo0 = Cargo(
+            id=0,
+            arrival_time=0.0,
+            loading_station=0,
+            loading_slot=0,
+            allowed_unloading_stations={0}
+        )
+        cargo1 = Cargo(
+            id=1,
+            arrival_time=0.0,
+            loading_station=1,
+            loading_slot=0,
+            allowed_unloading_stations={0}
+        )
+        self.env.cargos[0] = cargo0
+        self.env.cargos[1] = cargo1
+        self.env.loading_stations[0].slots[0] = 0
+        self.env.loading_stations[1].slots[0] = 1
+
+        # 第一次分配：应成功
+        self.env._execute_high_level_action({
+            'type': 'assign_loading',
+            'cargo_id': 0,
+            'vehicle_id': 0,
+            'slot_idx': 0
+        })
+        self.assertEqual(self.env.cargos[0].assigned_vehicle, 0)
+        self.assertEqual(self.env.cargos[0].assigned_vehicle_slot, 0)
+
+        # 第二次分配：同一 vehicle/slot 仍为空但已被预占，应被拒绝
+        self.env._execute_high_level_action({
+            'type': 'assign_loading',
+            'cargo_id': 1,
+            'vehicle_id': 0,
+            'slot_idx': 0
+        })
+        self.assertIsNone(self.env.cargos[1].assigned_vehicle)
+        self.assertIsNone(self.env.cargos[1].assigned_vehicle_slot)
+
 
 class TestVehicle(unittest.TestCase):
     """车辆类单元测试"""
@@ -153,7 +195,6 @@ class TestVehicle(unittest.TestCase):
             position=10.0,
             velocity=1.0,
             slots=[None, None],
-            slot_operation_end_time=[0.0, 0.0],
             is_loading_unloading=False
         )
     

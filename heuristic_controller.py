@@ -74,24 +74,8 @@ class HeuristicLowLevelController:
         vehicle = self.env.vehicles[vehicle_id]
         current_plan = self.vehicle_plans[vehicle_id]
         
-        # 检查车辆任务队列
-        target_position = None
-        target_task = None
-        
-        # 优先使用任务队列中的第一个任务
-        if vehicle.assigned_tasks:
-            target_task = vehicle.assigned_tasks[0]
-            target_position = target_task['target_position']
-        else:
-            # 如果没有显式任务，检查车上是否有货物需要卸货（兜底逻辑）
-            for slot_idx, cargo_id in enumerate(vehicle.slots):
-                if cargo_id is not None:
-                    cargo = self.env.cargos[cargo_id]
-                    if cargo.target_unloading_station is not None:
-                        # 需要去下料口卸货
-                        unloading_station = self.env.unloading_stations[cargo.target_unloading_station]
-                        target_position = unloading_station.position
-                        break
+        # 单一真相：目标位置从 cargo/slots 的真实状态推导
+        target_position = self.env.get_vehicle_target_position(vehicle_id)
         
         # 无任务，清除规划
         if target_position is None:
@@ -434,7 +418,7 @@ class HeuristicLowLevelController:
             has_waiting_cargo = False
             for cargo in self.env.cargos.values():
                 if (cargo.loading_station == loading_station.id and
-                    cargo.current_location.startswith("IP_") and
+                    self.env.is_cargo_at_loading_station(cargo) and
                     cargo.completion_time is None and
                     (cargo.assigned_vehicle is None or cargo.assigned_vehicle == vehicle_id)):
                     has_waiting_cargo = True

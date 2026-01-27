@@ -35,19 +35,8 @@ class RLLowLevelObservation:
         obs.append(np.clip(acceleration / MAX_ACCELERATION, -1.0, 1.0))
 
         # 2. 目标信息 (4维)
-        target_position = None
+        target_position = env.get_vehicle_target_position(vehicle_id)
         is_loading_unloading = float(vehicle.is_loading_unloading)
-
-        if vehicle.assigned_tasks:
-            target_position = vehicle.assigned_tasks[0]['target_position']
-        else:
-            for cargo_id in vehicle.slots:
-                if cargo_id is not None:
-                    cargo = env.cargos[cargo_id]
-                    if cargo.target_unloading_station is not None:
-                        station = env.unloading_stations[cargo.target_unloading_station]
-                        target_position = station.position
-                        break
 
         if target_position is not None:
             distance_to_target = vehicle.distance_to(target_position)
@@ -93,7 +82,7 @@ class RLLowLevelObservation:
 
         # 5. 任务信息 (3维)
         has_cargo = float(any(slot is not None for slot in vehicle.slots))
-        has_task = float(len(vehicle.assigned_tasks) > 0)
+        has_task = float(env.has_vehicle_task(vehicle_id))
 
         task_urgency = 0.0
         for cargo_id in vehicle.slots:
@@ -224,17 +213,7 @@ class RLLowLevelReward:
         reward = 0.0
 
         # 获取目标位置
-        target_position = None
-        if vehicle.assigned_tasks:
-            target_position = vehicle.assigned_tasks[0]['target_position']
-        else:
-            for cargo_id in vehicle.slots:
-                if cargo_id is not None:
-                    cargo = env.cargos[cargo_id]
-                    if cargo.target_unloading_station is not None:
-                        station = env.unloading_stations[cargo.target_unloading_station]
-                        target_position = station.position
-                        break
+        target_position = env.get_vehicle_target_position(vehicle_id)
 
         # ============ 目标相关奖励（原有+新增密集奖励） ============
         if target_position is not None:
@@ -471,11 +450,10 @@ class CustomPPOController:
 
             # 更新状态信息
             vehicle = self.env.vehicles[vehicle_id]
-            if vehicle.assigned_tasks:
-                target_pos = vehicle.assigned_tasks[0]['target_position']
-                self.prev_states[vehicle_id]['distance_to_target'] = vehicle.distance_to(target_pos)
-            else:
-                self.prev_states[vehicle_id]['distance_to_target'] = 0.0
+            target_pos = self.env.get_vehicle_target_position(vehicle_id)
+            self.prev_states[vehicle_id]['distance_to_target'] = (
+                0.0 if target_pos is None else vehicle.distance_to(target_pos)
+            )
 
         self._temp_transitions = {}
 

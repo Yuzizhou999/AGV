@@ -65,7 +65,7 @@ class HeuristicHighLevelController:
         assigned_vehicle_slots = set()
         for cargo in self.env.cargos.values():
             if (cargo.assigned_vehicle is not None and 
-                cargo.current_location.startswith("IP_")):
+                self.env.is_cargo_at_loading_station(cargo)):
                 assigned_vehicle_slots.add((cargo.assigned_vehicle, cargo.assigned_vehicle_slot))
         
         # 遍历等待的货物

@@ -247,26 +247,7 @@ class AGVVisualizer:
                         )
                         self.vehicle_texts.append(label_text)
         
-        # Cargo at unloading stations
-        for station_id, station in self.env.unloading_stations.items():
-            angle = self._position_to_angle(station.position)
-            x, y = self._polar_to_cartesian(self.radius, angle)
-            
-            for slot_idx, cargo_id in enumerate(station.slots):
-                if cargo_id is not None:
-                    # 货物位置（稍微偏移）
-                    offset = 0.4 if slot_idx == 0 else -0.4
-                    cargo_x = x + offset * np.cos(angle + np.pi/2)
-                    cargo_y = y + offset * np.sin(angle + np.pi/2)
-                    
-                    # 货物标记（小方块，绿色表示已送达）
-                    cargo_rect = patches.Rectangle(
-                        (cargo_x - 0.2, cargo_y - 0.2), 0.4, 0.4,
-                        facecolor='lightgreen', edgecolor='green',
-                        linewidth=1, zorder=8
-                    )
-                    self.ax_track.add_patch(cargo_rect)
-                    self.cargo_patches.append(cargo_rect)
+        # 下料口按“无限接收”口径不建模堆积，因此不显示下料口的货物占用。
     
     def _update_info_panel(self):
         """Update status information panel"""
@@ -361,13 +342,10 @@ class AGVVisualizer:
         # Unloading station status
         info_text += "Unloading Station Status:\n"
         for station_id, station in self.env.unloading_stations.items():
-            info_text += f"  Unloading {station_id} (Pos {station.position:.1f}):\n"
-            for slot_idx, cargo_id in enumerate(station.slots):
-                if cargo_id is not None:
-                    info_text += f"    Slot{slot_idx+1}: Cargo{cargo_id} OK\n"
-                else:
-                    status = "Reserved" if station.slot_reserved[slot_idx] else "Empty"
-                    info_text += f"    Slot{slot_idx+1}: {status}\n"
+            info_text += (
+                f"  Unloading {station_id} (Pos {station.position:.1f}): "
+                "∞ receiving (no slot state)\n"
+            )
         info_text += "\n"
         
         # Completed cargo details (show last 5)

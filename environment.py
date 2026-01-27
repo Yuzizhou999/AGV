@@ -6,14 +6,7 @@
 import numpy as np
 from dataclasses import dataclass
 from typing import List, Dict, Tuple, Optional, Set
-from enum import Enum
 from config import *
-
-
-class SlotState(Enum):
-    """工位状态"""
-    EMPTY = 0  # 空
-    OCCUPIED = 1  # 有货
 
 
 @dataclass
@@ -24,9 +17,7 @@ class Cargo:
     loading_station: int  # 在哪个上料工位
     loading_slot: int  # 在上料工位的哪个工位 (0: 1#, 1: 2#)
     allowed_unloading_stations: Set[int]  # 允许的下料口集合
-    current_location: str  # 当前位置: "IP_{id}_{slot}" 或 "vehicle_{id}_{slot}" 或 "OP_{id}_{slot}"
     target_unloading_station: Optional[int] = None  # 目标下料口
-    target_slot: Optional[int] = None  # 目标下料口的工位
     completion_time: Optional[float] = None  # 完成时间
     assigned_vehicle: Optional[int] = None  # 分配的车辆ID（用于上料任务）
     assigned_vehicle_slot: Optional[int] = None  # 分配的车辆工位
@@ -58,17 +49,11 @@ class Vehicle:
     position: float  # 当前位置 [0, L)
     velocity: float  # 当前速度
     slots: List[Optional[int]]  # 两个工位上的货物ID (None表示空)
-    slot_operation_end_time: List[float]  # 每个工位的操作结束时间
     is_loading_unloading: bool = False  # 是否正在进行上料/下料操作（锁定移动）
-    assigned_tasks: List[Dict] = None  # 任务队列：记录高层分配的任务
     
     def __post_init__(self):
         if len(self.slots) != 2:
             self.slots = [None, None]
-        if len(self.slot_operation_end_time) != 2:
-            self.slot_operation_end_time = [0.0, 0.0]
-        if self.assigned_tasks is None:
-            self.assigned_tasks = []
     
     def has_empty_slot(self) -> bool:
         """是否有空工位"""
@@ -140,32 +125,8 @@ class UnloadingStation:
     def __init__(self, id: int, position: float):
         self.id = id
         self.position = position
-        self.slots: List[Optional[int]] = [None, None]  # 两个工位上的货物ID
-        self.slot_reserved: List[bool] = [False, False]  # 是否被预订
-    
-    def has_empty_slot(self) -> bool:
-        """是否有空工位"""
-        return None in self.slots and not all(self.slot_reserved)
-    
-    def get_available_slot(self) -> Optional[int]:
-        """获取可用工位"""
-        for i in range(2):
-            if self.slots[i] is None and not self.slot_reserved[i]:
-                return i
-        return None
-    
-    def place_cargo(self, cargo_id: int, slot_idx: int) -> bool:
-        """在工位放置货物"""
-        if self.slots[slot_idx] is None:
-            self.slots[slot_idx] = cargo_id
-            return True
-        return False
-    
-    def remove_cargo(self, slot_idx: int) -> Optional[int]:
-        """从工位移除货物"""
-        cargo_id = self.slots[slot_idx]
-        self.slots[slot_idx] = None
-        return cargo_id
+        # 下料口按需求假定“无限接收”：卸货完成后不占用下料口工位。
+        # 因此不建模 slots/reserved 等容量状态，只保留位置用于对齐判断。
 
 
 class Environment:
@@ -183,7 +144,6 @@ class Environment:
                 position=float(i * TRACK_LENGTH / MAX_VEHICLES),
                 velocity=0.0,
                 slots=[None, None],
-                slot_operation_end_time=[0.0, 0.0],
                 is_loading_unloading=False
             )
         
@@ -213,11 +173,108 @@ class Environment:
         self.completed_cargo_list = []  # 保存已完成货物的详细信息
         self.safety_violations = []  # 记录本次step的安全违例车辆ID
 
-        # 性能优化：双工位索引 - O(1)查询同站同车的货物
-        # 上料索引: {(vehicle_id, station_id, slot_idx): cargo_id}
-        self.loading_cargo_index = {}
-        # 下料索引: {(vehicle_id, station_id, slot_idx): cargo_id}
-        self.unloading_cargo_index = {}
+    def is_cargo_at_loading_station(self, cargo: Cargo) -> bool:
+        """判断货物是否仍在其上料口工位（单一真相：以站点/车辆slots为准）。"""
+        station = self.loading_stations.get(cargo.loading_station)
+        if station is None:
+            return False
+        if cargo.loading_slot not in (0, 1):
+            return False
+        return station.slots[cargo.loading_slot] == cargo.id
+
+    def is_cargo_on_vehicle(self, cargo: Cargo) -> bool:
+        """判断货物是否已装载在某辆车的某个工位（单一真相：以车辆slots为准）。"""
+        # 优先检查分配车辆（通常就是装载车辆），避免全量扫描。
+        if cargo.assigned_vehicle is not None:
+            vehicle = self.vehicles.get(cargo.assigned_vehicle)
+            if vehicle is not None and cargo.id in vehicle.slots:
+                return True
+        # 兜底：扫描所有车辆，避免异常状态下误判。
+        for vehicle in self.vehicles.values():
+            if cargo.id in vehicle.slots:
+                return True
+        return False
+
+    def has_vehicle_task(self, vehicle_id: int) -> bool:
+        """判断车辆是否存在“待完成的任务”。
+
+        单一真相口径：
+        - 不依赖 vehicle.assigned_tasks（已移除），而是从 cargo/slots 的真实状态推导。
+        - 任务定义：需要去某个上料口取货，或需要去某个下料口卸货。
+        """
+        vehicle = self.vehicles.get(vehicle_id)
+        if vehicle is None:
+            return False
+
+        # 1) 卸货任务：车上有货物，且已分配下料口
+        for cargo_id in vehicle.slots:
+            if cargo_id is None or cargo_id not in self.cargos:
+                continue
+            cargo = self.cargos[cargo_id]
+            if cargo.target_unloading_station is not None:
+                return True
+
+        # 2) 取货任务：存在分配给该车且仍在上料口等待的货物
+        for cargo in self.cargos.values():
+            if cargo.completion_time is not None:
+                continue
+            if cargo.assigned_vehicle != vehicle_id:
+                continue
+            if not self.is_cargo_at_loading_station(cargo):
+                continue
+            slot_idx = cargo.assigned_vehicle_slot
+            if slot_idx in (0, 1) and vehicle.slots[slot_idx] is None:
+                return True
+
+        return False
+
+    def get_vehicle_target_position(self, vehicle_id: int) -> Optional[float]:
+        """推导车辆当前应该前往的目标位置（顺时针距离最短）。"""
+        vehicle = self.vehicles.get(vehicle_id)
+        if vehicle is None:
+            return None
+
+        # 优先：卸货（已有货物先送达，减少持有时间）
+        best_position = None
+        best_distance = float('inf')
+        for cargo_id in vehicle.slots:
+            if cargo_id is None or cargo_id not in self.cargos:
+                continue
+            cargo = self.cargos[cargo_id]
+            if cargo.target_unloading_station is None:
+                continue
+            station = self.unloading_stations.get(cargo.target_unloading_station)
+            if station is None:
+                continue
+            dist = vehicle.distance_to(station.position)
+            if dist < best_distance:
+                best_distance = dist
+                best_position = station.position
+        if best_position is not None:
+            return best_position
+
+        # 其次：取货（已分配且仍在上料口等待的货物）
+        for cargo in self.cargos.values():
+            if cargo.completion_time is not None:
+                continue
+            if cargo.assigned_vehicle != vehicle_id:
+                continue
+            if not self.is_cargo_at_loading_station(cargo):
+                continue
+            slot_idx = cargo.assigned_vehicle_slot
+            if slot_idx not in (0, 1):
+                continue
+            if vehicle.slots[slot_idx] is not None:
+                continue
+            station = self.loading_stations.get(cargo.loading_station)
+            if station is None:
+                continue
+            dist = vehicle.distance_to(station.position)
+            if dist < best_distance:
+                best_distance = dist
+                best_position = station.position
+
+        return best_position
     
     def reset(self, seed: int = None):
         """重置环境，支持可选seed
@@ -260,8 +317,7 @@ class Environment:
                     arrival_time=self.current_time,
                     loading_station=loading_station_id,
                     loading_slot=slot_idx,
-                    allowed_unloading_stations=allowed_stations,
-                    current_location=f"IP_{loading_station_id}_{slot_idx}"
+                    allowed_unloading_stations=allowed_stations
                 )
                 
                 self.cargos[self.cargo_counter] = cargo
@@ -369,13 +425,6 @@ class Environment:
             vehicle.velocity = new_velocity
             displacement = (old_velocity + new_velocity) / 2 * LOW_LEVEL_CONTROL_INTERVAL
             vehicle.position = self._normalize_position(vehicle.position + displacement)
-
-            # 更新工位操作时间
-            for i in range(2):
-                if vehicle.slot_operation_end_time[i] > 0:
-                    vehicle.slot_operation_end_time[i] -= LOW_LEVEL_CONTROL_INTERVAL
-                    if vehicle.slot_operation_end_time[i] < 0:
-                        vehicle.slot_operation_end_time[i] = 0
     
     def _check_safety_distance(self, vehicle_id: int, new_velocity: float) -> bool:
         """检查是否满足安全距离约束（简化版）
@@ -421,6 +470,21 @@ class Environment:
             return to_pos - from_pos
         else:
             return TRACK_LENGTH - from_pos + to_pos
+
+    def _is_vehicle_slot_reserved(self, vehicle_id: int, slot_idx: int) -> bool:
+        """检查车辆某个工位是否已经被“未完成任务”的货物预占。
+
+        说明：
+        - 车辆工位有两层状态：物理占用( vehicle.slots ) 与 任务预占( cargo.assigned_vehicle/slot )。
+        - 如果只看 vehicle.slots，会允许“同一工位被分配多个上料任务”的幽灵状态。
+        - 这里用简单规则硬性禁止：同一 (vehicle_id, slot_idx) 同时只能对应一个未完成货物。
+        """
+        for cargo in self.cargos.values():
+            if cargo.completion_time is not None:
+                continue
+            if cargo.assigned_vehicle == vehicle_id and cargo.assigned_vehicle_slot == slot_idx:
+                return True
+        return False
     
     def _execute_high_level_action(self, action: Dict) -> List[int]:
         """执行高层动作：任务分配和流向决策
@@ -440,80 +504,61 @@ class Environment:
             cargo_id = action.get('cargo_id')
             vehicle_id = action.get('vehicle_id')
             slot_idx = action.get('slot_idx')
-            
-            if (cargo_id in self.cargos and vehicle_id in self.vehicles and 
-                self.vehicles[vehicle_id].slots[slot_idx] is None):
-                cargo = self.cargos[cargo_id]
-                # 只有首次分配才记录（避免重复分配奖励）
-                if cargo.assigned_vehicle is None:
-                    assigned_ids.append(cargo_id)
-                self._assign_loading_task(cargo_id, vehicle_id, slot_idx)
+
+            # 参数有效性检查（避免 KeyError/越界）
+            if cargo_id not in self.cargos or vehicle_id not in self.vehicles:
+                return assigned_ids
+            if slot_idx not in (0, 1):
+                return assigned_ids
+
+            vehicle = self.vehicles[vehicle_id]
+            cargo = self.cargos[cargo_id]
+
+            # 只允许分配仍在上料口等待的货物（位置单一真相由 station/vehicle slots 决定）
+            if not self.is_cargo_at_loading_station(cargo):
+                return assigned_ids
+
+            # 物理工位已占用，则不允许再分配
+            if vehicle.slots[slot_idx] is not None:
+                return assigned_ids
+
+            # 不支持“重分配”（避免任务多源状态失配）；同一分配重复提交视为 no-op
+            if cargo.assigned_vehicle is not None:
+                return assigned_ids
+
+            # 硬性禁止同一 vehicle 工位同时分配多个未完成货物
+            if self._is_vehicle_slot_reserved(vehicle_id, slot_idx):
+                return assigned_ids
+
+            assigned_ids.append(cargo_id)
+            self._assign_loading_task(cargo_id, vehicle_id, slot_idx)
         
         elif action_type == 'assign_unloading':
             # 分配下料目标
             cargo_id = action.get('cargo_id')
             unloading_station_id = action.get('unloading_station_id')
-            slot_idx = action.get('slot_idx')
             
             if cargo_id in self.cargos:
                 cargo = self.cargos[cargo_id]
-                if (unloading_station_id in cargo.allowed_unloading_stations and
-                    self.unloading_stations[unloading_station_id].has_empty_slot()):
+                # 下料口按需求假定“无限接收”：卸货完成后不占用下料口工位。
+                # 因此这里只做两件事：
+                # 1) 校验是否在允许集合内
+                # 2) 校验该货物当前确实在车上（避免“提前分配”制造特殊情况）
+                if (cargo.completion_time is None and
+                    cargo.target_unloading_station is None and
+                    unloading_station_id in cargo.allowed_unloading_stations and
+                    self.is_cargo_on_vehicle(cargo)):
                     cargo.target_unloading_station = unloading_station_id
-                    cargo.target_slot = slot_idx
-                    
-                    # 在车辆任务队列中添加下料任务
-                    if cargo.assigned_vehicle is not None:
-                        vehicle = self.vehicles[cargo.assigned_vehicle]
-                        unloading_station = self.unloading_stations[unloading_station_id]
-                        task = {
-                            'type': 'unloading',
-                            'cargo_id': cargo_id,
-                            'target_position': unloading_station.position,
-                            'station_id': unloading_station_id,
-                            'slot_idx': slot_idx
-                        }
-                        
-                        # 避免重复添加任务
-                        task_exists = any(
-                            t['type'] == 'unloading' and t['cargo_id'] == cargo_id 
-                            for t in vehicle.assigned_tasks
-                        )
-                        if not task_exists:
-                            vehicle.assigned_tasks.append(task)
         
         return assigned_ids
     
     def _assign_loading_task(self, cargo_id: int, vehicle_id: int, slot_idx: int):
         """分配上料任务（只标记任务，实际上料在车辆对齐时执行）"""
         cargo = self.cargos[cargo_id]
-        vehicle = self.vehicles[vehicle_id]
 
         # 标记货物任务分配
         cargo.assigned_vehicle = vehicle_id
         cargo.assigned_vehicle_slot = slot_idx
-
-        # 更新上料索引（性能优化：O(1)查询同站同车货物）
-        index_key = (vehicle_id, cargo.loading_station, slot_idx)
-        self.loading_cargo_index[index_key] = cargo_id
-
-        # 在车辆任务队列中添加上料任务
-        loading_station = self.loading_stations[cargo.loading_station]
-        task = {
-            'type': 'loading',
-            'cargo_id': cargo_id,
-            'target_position': loading_station.position,
-            'station_id': cargo.loading_station,
-            'slot_idx': slot_idx
-        }
-
-        # 避免重复添加任务
-        task_exists = any(
-            t['type'] == 'loading' and t['cargo_id'] == cargo_id
-            for t in vehicle.assigned_tasks
-        )
-        if not task_exists:
-            vehicle.assigned_tasks.append(task)
     
     def _process_loading_operations(self):
         """处理上料操作：检查车辆是否对齐上料口，执行上料
@@ -528,7 +573,7 @@ class Environment:
             # 只处理在上料口等待且已分配车辆的货物
             if (cargo.completion_time is not None or 
                 cargo.assigned_vehicle is None or
-                not cargo.current_location.startswith("IP_")):
+                not self.is_cargo_at_loading_station(cargo)):
                 continue
             
             vehicle = self.vehicles[cargo.assigned_vehicle]
@@ -551,22 +596,29 @@ class Environment:
                 vehicle.is_loading_unloading = True  # 锁定车辆移动
                 vehicle.velocity = 0.0  # 立即停止车辆
 
-                # 【性能优化】检查是否可以启用双工位同时上料
-                # 优化前：O(m²) 遍历所有货物
-                # 优化后：O(1) 直接查询索引
+                # 检查是否可以启用双工位同时上料
+                # 规则：同一车辆、同一上料口、另一个车辆工位也有已分配且仍在上料口等待的货物
                 other_slot_idx = 1 - slot_idx  # 另一个工位（0->1, 1->0）
-                other_index_key = (cargo.assigned_vehicle, cargo.loading_station, other_slot_idx)
-                other_cargo_id = self.loading_cargo_index.get(other_index_key)
-
-                if other_cargo_id is not None and other_cargo_id in self.cargos:
-                    other_cargo = self.cargos[other_cargo_id]
-                    # 检查另一个工位的货物是否也在等待上料
-                    if (other_cargo.current_location.startswith("IP_") and
-                        other_cargo.loading_start_time is None and
-                        vehicle.slots[other_slot_idx] is None):
+                if vehicle.slots[other_slot_idx] is None:
+                    for other_cargo in self.cargos.values():
+                        if other_cargo.id == cargo.id:
+                            continue
+                        if other_cargo.completion_time is not None:
+                            continue
+                        if other_cargo.assigned_vehicle != cargo.assigned_vehicle:
+                            continue
+                        if other_cargo.assigned_vehicle_slot != other_slot_idx:
+                            continue
+                        if other_cargo.loading_station != cargo.loading_station:
+                            continue
+                        if other_cargo.loading_start_time is not None:
+                            continue
+                        if not self.is_cargo_at_loading_station(other_cargo):
+                            continue
                         # 找到同站同车的另一个货物，同时开始上料
                         other_cargo.loading_start_time = self.current_time
                         other_cargo.picked_up_time = self.current_time
+                        break
                 
                 continue  # 本轮只开始计时，下一轮再检查完成
             
@@ -597,20 +649,9 @@ class Environment:
                 # 执行上料：从上料口移除货物，放到车上
                 loading_station.slots[cargo.loading_slot] = None
                 vehicle.slots[slot_idx] = cargo.id
-                cargo.current_location = f"vehicle_{cargo.assigned_vehicle}_{slot_idx}"
                 cargo.loading_start_time = None
                 # 注意：不在这里解除锁定，统一在函数最后处理
                 picked_up_ids.append(cargo.id)  # 记录完成取货的货物
-
-                # 【性能优化】清理上料索引
-                index_key = (cargo.assigned_vehicle, cargo.loading_station, slot_idx)
-                self.loading_cargo_index.pop(index_key, None)
-
-                # 从车辆任务队列中移除上料任务
-                vehicle.assigned_tasks = [
-                    t for t in vehicle.assigned_tasks
-                    if not (t['type'] == 'loading' and t['cargo_id'] == cargo.id)
-                ]
         
         # 统一检查所有车辆：如果没有任何货物正在上料或下料，则解除锁定
         for vehicle in self.vehicles.values():
@@ -710,7 +751,6 @@ class Environment:
                 if self.current_time - cargo.unloading_start_time >= UNLOADING_TIME:
                     # 执行下料：从车上移除货物，货物直接完成任务（不占用下料口slot）
                     vehicle.slots[slot_idx] = None
-                    cargo.current_location = f"OP_{cargo.target_unloading_station}_{cargo.target_slot}_completed"
                     cargo.completion_time = self.current_time
                     cargo.unloading_start_time = None
                     self.completed_cargos += 1
@@ -726,22 +766,15 @@ class Environment:
                         'wait_time': cargo.wait_time(self.current_time),
                         'loading_station': cargo.loading_station,
                         'unloading_station': cargo.target_unloading_station,
-                        'vehicle_id': cargo.assigned_vehicle
+                        'vehicle_id': vehicle_id
                     }
                     self.completed_cargo_list.append(completed_info)
                     
-                    # 下料口的slot保持空闲，不放置货物
-                    # unloading_station.slots[cargo.target_slot] 保持为 None
+                    # 下料口按“无限接收”口径不建模工位占用，因此卸货完成不写入 station 状态。
                     
                     # 注意：不在这里解除锁定，统一在函数最后处理
                     # 记录已完成的货物ID
                     completed_cargo_ids.append(cargo_id)
-                    
-                    # 从车辆任务队列中移除下料任务
-                    vehicle.assigned_tasks = [
-                        t for t in vehicle.assigned_tasks 
-                        if not (t['type'] == 'unloading' and t['cargo_id'] == cargo_id)
-                    ]
         
         # 删除已完成的货物（在遍历后删除，避免遍历时修改字典）
         for cargo_id in completed_cargo_ids:
@@ -881,16 +914,14 @@ class Environment:
         unloading_obs = []
         for station in self.unloading_stations.values():
             station_obs = {
-                'position': station.position / TRACK_LENGTH,
-                'slots': station.slots.copy(),
-                'slot_occupied': [slot is not None for slot in station.slots]
+                'position': station.position / TRACK_LENGTH
             }
             unloading_obs.append(station_obs)
         
         # 待取货物信息（超时货物优先级更高，排在前面）
         waiting_cargos = []
         for cargo in self.cargos.values():
-            if cargo.completion_time is None and cargo.current_location.startswith("IP_"):
+            if cargo.completion_time is None and self.is_cargo_at_loading_station(cargo):
                 waiting_cargos.append({
                     'id': cargo.id,
                     'wait_time': cargo.wait_time(self.current_time),
@@ -942,8 +973,8 @@ class Environment:
             ])
         
         # 全局信息
-        waiting_count = sum(1 for c in self.cargos.values() 
-                          if c.completion_time is None and c.current_location.startswith("IP_"))
+        waiting_count = sum(1 for c in self.cargos.values()
+                          if c.completion_time is None and self.is_cargo_at_loading_station(c))
         obs_list.extend([
             self.current_time / EPISODE_DURATION,
             waiting_count / max(10, self.cargo_counter)

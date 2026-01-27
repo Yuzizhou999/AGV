@@ -54,24 +54,9 @@ class RLLowLevelObservation:
         obs.append(np.clip(acceleration / MAX_ACCELERATION, -1.0, 1.0))
 
         # ========== 2. 目标信息 (4维) ==========
-        target_position = None
+        target_position = env.get_vehicle_target_position(vehicle_id)
         target_velocity = 0.0
         is_loading_unloading = float(vehicle.is_loading_unloading)
-
-        # 获取目标位置（从任务队列或自动寻找卸货点）
-        if vehicle.assigned_tasks:
-            target_position = vehicle.assigned_tasks[0]['target_position']
-            target_velocity = 0.0  # 上下料点目标速度为0
-        else:
-            # 如果车上有货，自动寻找卸货点
-            for cargo_id in vehicle.slots:
-                if cargo_id is not None:
-                    cargo = env.cargos[cargo_id]
-                    if cargo.target_unloading_station is not None:
-                        station = env.unloading_stations[cargo.target_unloading_station]
-                        target_position = station.position
-                        target_velocity = 0.0
-                        break
 
         if target_position is not None:
             distance_to_target = vehicle.distance_to(target_position)
@@ -118,7 +103,7 @@ class RLLowLevelObservation:
 
         # ========== 5. 任务信息 (3维) ==========
         has_cargo = float(any(slot is not None for slot in vehicle.slots))
-        has_task = float(len(vehicle.assigned_tasks) > 0)
+        has_task = float(env.has_vehicle_task(vehicle_id))
 
         # 任务紧急度（基于最老货物的等待时间）
         task_urgency = 0.0
@@ -200,18 +185,7 @@ class RLLowLevelReward:
         reward = 0.0
 
         # 获取目标位置
-        target_position = None
-        if vehicle.assigned_tasks:
-            target_position = vehicle.assigned_tasks[0]['target_position']
-        else:
-            # 检查是否需要卸货
-            for cargo_id in vehicle.slots:
-                if cargo_id is not None:
-                    cargo = env.cargos[cargo_id]
-                    if cargo.target_unloading_station is not None:
-                        station = env.unloading_stations[cargo.target_unloading_station]
-                        target_position = station.position
-                        break
+        target_position = env.get_vehicle_target_position(vehicle_id)
 
         # 如果有目标位置，计算目标相关奖励
         if target_position is not None:
@@ -301,11 +275,10 @@ class LowLevelGymEnv(gym.Env):
 
         # 初始化状态追踪
         vehicle = self.base_env.vehicles[self.vehicle_id]
-        if vehicle.assigned_tasks:
-            target_pos = vehicle.assigned_tasks[0]['target_position']
-            self.prev_state['distance_to_target'] = vehicle.distance_to(target_pos)
-        else:
-            self.prev_state['distance_to_target'] = 0.0
+        target_pos = self.base_env.get_vehicle_target_position(self.vehicle_id)
+        self.prev_state['distance_to_target'] = (
+            0.0 if target_pos is None else vehicle.distance_to(target_pos)
+        )
 
         return obs, {}
 
@@ -330,9 +303,10 @@ class LowLevelGymEnv(gym.Env):
 
         # 更新状态追踪
         vehicle = self.base_env.vehicles[self.vehicle_id]
-        if vehicle.assigned_tasks:
-            target_pos = vehicle.assigned_tasks[0]['target_position']
-            self.prev_state['distance_to_target'] = vehicle.distance_to(target_pos)
+        target_pos = self.base_env.get_vehicle_target_position(self.vehicle_id)
+        self.prev_state['distance_to_target'] = (
+            0.0 if target_pos is None else vehicle.distance_to(target_pos)
+        )
 
         # episode结束条件（由外部环境控制）
         terminated = False

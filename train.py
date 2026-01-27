@@ -388,17 +388,21 @@ class TrainingManager:
         # 统计等待中的货物:分为超时等待和不超时等待
         waiting_cargos_normal = sum(1 for c in self.env.cargos.values() 
                                    if c.completion_time is None 
-                                   and c.current_location.startswith("IP_")
+                                   and self.env.is_cargo_at_loading_station(c)
                                    and not c.is_timeout(self.env.current_time) and c.picked_up_time is None)
         waiting_cargos_timeout = sum(1 for c in self.env.cargos.values() 
                                     if c.completion_time is None 
-                                    and c.current_location.startswith("IP_")
+                                    and self.env.is_cargo_at_loading_station(c)
                                     and c.is_timeout(self.env.current_time) and c.picked_up_time is None)
         
         total_cargos = self.env.cargo_counter
         waiting_cargos = waiting_cargos_normal + waiting_cargos_timeout  # 总等待数
-        on_vehicle_cargos = sum(1 for c in self.env.cargos.values()
-                               if c.completion_time is None and c.current_location.startswith("vehicle_"))
+        on_vehicle_cargos = sum(
+            1
+            for vehicle in self.env.vehicles.values()
+            for cargo_id in vehicle.slots
+            if cargo_id is not None
+        )
         
         # 平均等待时间(从到达到被取走)
         avg_wait_time = self.env.total_wait_time / max(1, self.env.completed_cargos)

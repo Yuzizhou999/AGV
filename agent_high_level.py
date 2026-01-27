@@ -112,11 +112,10 @@ class HighLevelAgent:
 class HighLevelController:
     """高层控制器：决策组件
     
-    负责任务分配决策，并维护车辆任务队列：
-    - 分配上料任务时，将任务加入车辆的 assigned_tasks 队列
-    - 分配下料目标时，将任务加入车辆的 assigned_tasks 队列
-    - 低层控制器从队列中读取任务，规划运动路径
-    - 任务完成后自动从队列移除，实现闭环控制
+    负责任务分配决策（单一真相口径）：
+    - 上料分配：写入 cargo.assigned_vehicle / cargo.assigned_vehicle_slot
+    - 下料分配：写入 cargo.target_unloading_station
+    - 低层控制器不再读取“车辆任务队列”，而是从 cargo/slots 的真实状态推导目标位置
     """
     
     def __init__(self, agent: HighLevelAgent, env):
@@ -159,7 +158,7 @@ class HighLevelController:
         assigned_vehicle_slots = set()
         for cargo in self.env.cargos.values():
             if (cargo.assigned_vehicle is not None and 
-                cargo.current_location.startswith("IP_")):
+                self.env.is_cargo_at_loading_station(cargo)):
                 assigned_vehicle_slots.add((cargo.assigned_vehicle, cargo.assigned_vehicle_slot))
         
         # 生成上料任务动作（优先处理超时货物）

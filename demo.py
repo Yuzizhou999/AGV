@@ -149,25 +149,34 @@ class DemoRunner:
         
         # 打印货物统计
         print("货物统计:")
-        completed_count = sum(1 for c in self.env.cargos.values() if c.completion_time is not None)
-        waiting_count = sum(1 for c in self.env.cargos.values() 
-                           if c.completion_time is None and c.current_location.startswith("IP_"))
-        on_vehicle_count = sum(1 for c in self.env.cargos.values()
-                              if c.current_location.startswith("vehicle_"))
+        # 注意：环境会在完成下料后删除已完成货物对象，因此“已完成”以计数器为准。
+        completed_count = self.env.completed_cargos
+        waiting_count = sum(
+            1
+            for c in self.env.cargos.values()
+            if c.completion_time is None and self.env.is_cargo_at_loading_station(c) and c.picked_up_time is None
+        )
+        on_vehicle_count = sum(
+            1
+            for vehicle in self.env.vehicles.values()
+            for cargo_id in vehicle.slots
+            if cargo_id is not None
+        )
         
-        print(f"  总货物数: {len(self.env.cargos)}")
+        print(f"  总货物数: {self.env.cargo_counter}")
         print(f"  已完成: {completed_count}")
         print(f"  待取: {waiting_count}")
         print(f"  车上: {on_vehicle_count}")
-        print(f"  完成率: {completed_count/max(1, len(self.env.cargos))*100:.2f}%")
+        print(f"  完成率: {completed_count/max(1, self.env.cargo_counter)*100:.2f}%")
         print()
         
         # 打印性能指标
         print("性能指标:")
-        if completed_count > 0:
-            avg_completion_time = np.mean([c.completion_time - c.arrival_time 
-                                          for c in self.env.cargos.values() 
-                                          if c.completion_time is not None])
+        if self.env.completed_cargo_list:
+            avg_completion_time = np.mean([
+                c['completion_time'] - c['arrival_time']
+                for c in self.env.completed_cargo_list
+            ])
             print(f"  平均完成时间: {avg_completion_time:.2f}秒")
         
         if len(self.env.cargos) > 0:
@@ -227,8 +236,10 @@ class DetailedVisualizationDemo:
                   f"{s.slots[1] if s.slots[1] is not None else '-'}]")
         
         print("\n等待货物:")
-        waiting = [c for c in self.env.cargos.values() 
-                  if c.completion_time is None and c.current_location.startswith("IP_")]
+        waiting = [
+            c for c in self.env.cargos.values()
+            if c.completion_time is None and self.env.is_cargo_at_loading_station(c)
+        ]
         for cargo in waiting[:5]:  # 最多显示5个
             print(f"  货物{cargo.id}: 等待{cargo.wait_time(self.env.current_time):.1f}s")
     
