@@ -74,8 +74,8 @@ class TrainingManager:
 
     def __init__(self, num_episodes: int = NUM_EPISODES, use_gpu: bool = False,
                  enable_visualization: bool = False, vis_update_interval: int = 10,
-                 use_rl_low_level: bool = False, rl_model_path: str = None,
-                 use_custom_ppo: bool = True, use_heuristic_low_level: bool = True,
+                 use_rl_low_level: bool = True, rl_model_path: str = None,
+                 use_custom_ppo: bool = True, use_heuristic_low_level: bool = False,
                  logger: logging.Logger = None):
         """
         初始化训练管理器
@@ -641,32 +641,33 @@ def main():
                        help='启用可视化（会显著降低训练速度）')
     parser.add_argument('--vis-interval', type=int, default=50,
                        help='可视化更新间隔（步数）')
-    # 默认：启发式底层（规则），即直接运行 `python train.py` 即为高/低层均启发式
-    parser.set_defaults(use_rl_low_level=False, heuristic_low_level=True)
+    # 默认：RL底层（自定义PPO），即直接运行 `python train.py` 就会使用 PPO 做底层“运动控制”
+    # 若要切回非RL（启发式/ DQN），显式加 `--no-rl-low-level`
+    parser.set_defaults(use_rl_low_level=True, heuristic_low_level=True)
 
     parser.add_argument(
         '--rl-low-level',
         dest='use_rl_low_level',
         action='store_true',
-        help='启用RL底层控制器（PPO）'
+        help='启用RL底层控制器（PPO）（默认）'
     )
     # 兼容历史参数：该参数名与实际行为相反（store_false），保留但修正文案
     parser.add_argument(
         '--use-rl-low-level',
         dest='use_rl_low_level',
         action='store_false',
-        help='[Deprecated] 禁用RL底层控制器（PPO）（默认已禁用）'
+        help='[Deprecated] 禁用RL底层控制器（PPO）（默认已启用）'
     )
     parser.add_argument(
         '--no-rl-low-level',
         dest='use_rl_low_level',
         action='store_false',
-        help='禁用RL底层控制器（PPO）（默认）'
+        help='禁用RL底层控制器（PPO）'
     )
     parser.add_argument(
         '--heuristic-low-level',
         action='store_true',
-        help='在非RL模式下使用启发式底层控制器（规则）（默认）'
+        help='在非RL模式下使用启发式底层控制器（规则）（当你禁用RL时默认）'
     )
     parser.add_argument(
         '--dqn-low-level',
