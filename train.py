@@ -183,6 +183,9 @@ class TrainingManager:
         
         # 全局步数统计
         self.total_steps = 0
+        # 用独立 RNG 生成每个 episode 的 seed，避免 Environment.reset(np.random.seed)
+        # 污染全局 np.random 导致 seed 序列按评估周期重复。
+        self.seed_rng = np.random.default_rng()
 
     def generate_random_seed(self, exclude: int = None) -> int:
         """生成随机seed，排除指定值
@@ -194,7 +197,7 @@ class TrainingManager:
             随机生成的seed整数(0-99999)
         """
         while True:
-            seed = np.random.randint(0, 100000)
+            seed = int(self.seed_rng.integers(0, 100000))
             if exclude is None or seed != exclude:
                 return seed
 
@@ -483,12 +486,12 @@ class TrainingManager:
             # 每个episode都打印基本信息
             self.logger.info(f"Episode {episode+1:4d}/{self.num_episodes} (seed={train_seed}) | "
                   f"奖励: {episode_reward:9.2f} | "
-                  f"完成: {completed:3d} (正常: {completed_normal:3d}, 超时: {completed_timeout:2d}) | "
+                  f"完成件: {completed:3d} (正常: {completed_normal:3d}, 超时: {completed_timeout:2d}) | "
                   f"待取: {waiting_cargos:2d} (正常: {waiting_normal:2d}, 超时: {waiting_timeout:2d}) | "
                   f"总货: {total_cargos:3d} | "
                   f"在车: {on_vehicle_cargos:2d} | "
                   f"等待: {avg_wait:6.2f}s | "
-                  f"完成: {avg_completion:6.2f}s | "
+                  f"完成耗时: {avg_completion:6.2f}s | "
                   f"耗时: {episode_time:5.2f}s")
 
             # 打印loss(仅在使用RL时)
@@ -527,10 +530,10 @@ class TrainingManager:
 
                 self.logger.info(f"  [Episode {episode-8:4d}-{episode+1:4d} 统计] "
                       f"平均奖励: {avg_reward:9.2f} | "
-                      f"平均完成: {avg_completion:6.1f} (正常: {avg_completion-avg_completed_timeout:5.1f}, 超时: {avg_completed_timeout:4.1f}) | "
+                      f"平均完成件: {avg_completion:6.1f} (正常: {avg_completion-avg_completed_timeout:5.1f}, 超时: {avg_completed_timeout:4.1f}) | "
                       f"平均待取: {avg_waiting_normal+avg_waiting_timeout:4.1f} (正常: {avg_waiting_normal:4.1f}, 超时: {avg_waiting_timeout:4.1f}) | "
                       f"平均等待: {avg_wait_10:6.2f}s | "
-                      f"平均完成: {avg_completion_time_10:6.2f}s")
+                      f"平均完成耗时: {avg_completion_time_10:6.2f}s")
 
                 self.logger.info("")
             

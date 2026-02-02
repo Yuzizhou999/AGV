@@ -142,9 +142,10 @@ class HeuristicLowLevelController:
         a = MAX_ACCELERATION
         v_max = MAX_SPEED
         
-        # 如果是上下料口，目标速度为SPEED_TOLERANCE/2（留有余量）
-        # 否则目标速度为0
-        v_target = SPEED_TOLERANCE / 2 if is_station else 0.0
+        # 上下料口必须真正“停住”(v=0) 才能稳定触发对齐判断。
+        # 这里如果给一个很小但非零的目标速度，在 0.5s 离散控制下会出现
+        # 某些 seed 下永远错过工位（反复略过目标点），导致完成数=0 的坏情况。
+        v_target = 0.0 if is_station else 0.0
         
         # 计算从当前速度减速到目标速度所需的距离
         if current_v > v_target:
