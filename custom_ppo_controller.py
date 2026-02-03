@@ -259,7 +259,7 @@ class RLLowLevelReward:
             brake_distance = RLLowLevelReward._compute_brake_distance(v_current, v_target)
 
             # 如果当前距离接近理想减速点，且速度较高，鼓励减速动作
-            # action > 0表示加速，action < 0表示减速（归一化到[-1,1]）
+            # action 是“归一化动作”[-1, 1]：action > 0表示加速，action < 0表示减速
             if distance <= brake_distance + 2.0 and distance >= brake_distance - 1.0:
                 # 在减速窗口内
                 if v_current > v_target + 0.5:  # 速度还比较高
@@ -362,6 +362,9 @@ class CustomPPOController:
         # 清理临时transition缓存，避免在切换环境/episode边界时残留
         if hasattr(self, '_temp_transitions'):
             self._temp_transitions = {}
+        # 重置观测侧的“上一时刻速度”缓存，避免跨episode的加速度差分被污染
+        for v in self.env.vehicles.values():
+            v._prev_velocity = v.velocity
 
     def compute_actions(self, deterministic=False) -> Dict[int, float]:
         """
@@ -423,11 +426,14 @@ class CustomPPOController:
         total_low_level_reward = 0.0
 
         for vehicle_id, transition in self._temp_transitions.items():
+            # 统一口径：奖励函数使用“归一化动作”[-1, 1]，与 PPO 的 action 定义一致；
+            # 物理加速度(米/秒^2)只用于环境动力学执行。
+            norm_action = float(transition['action'][0])
             # 计算底层运动奖励（密集奖励 - RLLowLevelReward）
             low_level_reward = RLLowLevelReward.compute(
                 self.env,
                 vehicle_id,
-                transition['acceleration'],
+                norm_action,
                 self.prev_states[vehicle_id]
             )
 

@@ -67,7 +67,7 @@ class WarmCosineScheduler(_LRScheduler):
 class ActorCritic(nn.Module):
     """
     Actor-Critic网络
-    Actor输出动作的均值和标准差（连续动作空间）
+    Actor输出动作分布参数（连续动作空间，采用 Squashed Gaussian：Normal -> Tanh）
     Critic输出状态价值
     """
     
@@ -90,12 +90,11 @@ class ActorCritic(nn.Module):
             nn.ReLU()
         )
         
-        # Actor: 输出动作均值
+        # Actor: 输出动作均值（不在网络里做Tanh；在采样时统一做Tanh，并修正log_prob）
         self.actor_mean = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, action_dim),
-            nn.Tanh()  # 动作范围 [-1, 1]
+            nn.Linear(hidden_dim, action_dim)
         )
         
         # Actor: 输出动作标准差的对数
@@ -130,20 +129,18 @@ class ActorCritic(nn.Module):
             value: 状态价值
         """
         action_mean, action_std, value = self.forward(obs)
-        
-        if deterministic:
-            action = action_mean
-        else:
-            # 从正态分布采样
-            dist = torch.distributions.Normal(action_mean, action_std)
-            action = dist.sample()
-        # 环境侧会对加速度做clip；这里先把动作本身限制到[-1, 1]，保证“采样动作/记录动作/执行动作”一致
-        action = torch.clamp(action, -1.0, 1.0)
-        
-        # 计算对数概率
+
+        # Squashed Gaussian：先采样 Normal，再用 Tanh 映射到 (-1, 1)，同时修正 log_prob。
+        # 这样能消除“动作被clamp了，但log_prob按未clamp计算”的不一致特殊情况。
         dist = torch.distributions.Normal(action_mean, action_std)
-        log_prob = dist.log_prob(action).sum(dim=-1)
-        
+        pre_tanh = action_mean if deterministic else dist.sample()
+        action = torch.tanh(pre_tanh)
+
+        # log_prob(tanh(x)) = log_prob(x) - log(1 - tanh(x)^2)，对每个动作维度求和
+        eps = 1e-6
+        log_prob = dist.log_prob(pre_tanh) - torch.log(1.0 - action.pow(2) + eps)
+        log_prob = log_prob.sum(dim=-1)
+
         return action, log_prob, value
     
     def evaluate_actions(self, obs, actions):
@@ -161,11 +158,22 @@ class ActorCritic(nn.Module):
             entropy: 策略熵
         """
         action_mean, action_std, values = self.forward(obs)
-        
+
+        # 对应 get_action() 的 Squashed Gaussian：用 atanh(actions) 还原 pre_tanh，
+        # 再按同样的变换公式计算 log_prob。
         dist = torch.distributions.Normal(action_mean, action_std)
-        log_probs = dist.log_prob(actions).sum(dim=-1)
+
+        eps = 1e-6
+        # 保险：避免 atanh(±1) 导致无穷大
+        actions = torch.clamp(actions, -1.0 + eps, 1.0 - eps)
+        pre_tanh = 0.5 * (torch.log1p(actions) - torch.log1p(-actions))
+
+        log_probs = dist.log_prob(pre_tanh) - torch.log(1.0 - actions.pow(2) + eps)
+        log_probs = log_probs.sum(dim=-1)
+
+        # 熵项用 Normal 的熵近似（足够用于探索正则项）
         entropy = dist.entropy().sum(dim=-1)
-        
+
         return log_probs, values, entropy
 
 
