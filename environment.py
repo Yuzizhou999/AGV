@@ -172,6 +172,9 @@ class Environment:
         self.total_wait_time = 0.0
         self.completed_cargo_list = []  # 保存已完成货物的详细信息
         self.safety_violations = []  # 记录本次step的安全违例车辆ID
+        self.alerts = []
+        self.safety_warning_count = 0
+        self.collision_alert_count = 0
 
     def is_cargo_at_loading_station(self, cargo: Cargo) -> bool:
         """判断货物是否仍在其上料口工位（单一真相：以站点/车辆slots为准）。"""
@@ -357,7 +360,8 @@ class Environment:
         
         # 执行低层控制（更新车辆位置和速度）
         self._execute_low_level_control(low_level_actions)
-        
+        self._update_proximity_alerts()
+
         # 执行高层任务分配，获取分配事件
         assigned_ids = self._execute_high_level_action(high_level_action)
         
@@ -470,6 +474,36 @@ class Environment:
             return to_pos - from_pos
         else:
             return TRACK_LENGTH - from_pos + to_pos
+
+    def _circular_distance(self, pos_a: float, pos_b: float) -> float:
+        """计算环形轨道上两点之间的最小圆周距离"""
+        forward = self._forward_distance(pos_a, pos_b)
+        return min(forward, TRACK_LENGTH - forward)
+
+    def _record_alert(self, level: str, vehicle_ids: tuple, distance: float) -> None:
+        self.alerts.append({
+            'time': self.current_time,
+            'level': level,
+            'vehicle_ids': list(vehicle_ids),
+            'distance': distance,
+        })
+        if level == 'collision':
+            self.collision_alert_count += 1
+        else:
+            self.safety_warning_count += 1
+
+    def _update_proximity_alerts(self, collision_threshold: float = 0.1) -> None:
+        """记录车辆间安全距离预警与碰撞告警"""
+        vehicle_ids = sorted(self.vehicles.keys())
+        for index, vehicle_id in enumerate(vehicle_ids):
+            for other_id in vehicle_ids[index + 1:]:
+                vehicle = self.vehicles[vehicle_id]
+                other_vehicle = self.vehicles[other_id]
+                distance = self._circular_distance(vehicle.position, other_vehicle.position)
+                if distance <= collision_threshold:
+                    self._record_alert('collision', (vehicle_id, other_id), distance)
+                elif distance < SAFETY_DISTANCE:
+                    self._record_alert('warning', (vehicle_id, other_id), distance)
 
     def _is_vehicle_slot_reserved(self, vehicle_id: int, slot_idx: int) -> bool:
         """检查车辆某个工位是否已经被“未完成任务”的货物预占。

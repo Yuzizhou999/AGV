@@ -11,3 +11,4 @@ tmp
 .claude
 *.pdf
 logs
+outputs

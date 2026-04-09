@@ -311,7 +311,8 @@ class CustomPPOController:
     """
 
     def __init__(self, env, model_path: Optional[str] = None, device='cpu',
-                 total_episodes: int = NUM_EPISODES):
+                 total_episodes: int = NUM_EPISODES,
+                 model_paths: Optional[Dict[int, str]] = None):
         """
         初始化控制器
 
@@ -339,11 +340,15 @@ class CustomPPOController:
             )
 
             # 如果提供了模型路径，加载模型
-            if model_path is not None:
+            agent_model_path = None
+            if model_paths is not None:
+                agent_model_path = model_paths.get(vehicle_id)
+            elif model_path is not None:
                 agent_model_path = model_path.replace('.pth', f'_v{vehicle_id}.pth')
-                if os.path.exists(agent_model_path):
-                    self.agents[vehicle_id].load(agent_model_path)
-                    print(f"✓ 车辆{vehicle_id}加载模型: {agent_model_path}")
+
+            if agent_model_path is not None and os.path.exists(agent_model_path):
+                self.agents[vehicle_id].load(agent_model_path)
+                print(f"Loaded model for vehicle {vehicle_id}: {agent_model_path}")
 
         # 用于存储上一步的状态信息
         self.prev_states = {vid: {} for vid in range(MAX_VEHICLES)}
