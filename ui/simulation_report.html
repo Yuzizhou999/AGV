@@ -1,0 +1,1695 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AGV Simulation Workbench</title>
+  <style>
+    :root {
+      --bg: #ebe6dc;
+      --panel: rgba(252, 249, 242, 0.92);
+      --ink: #1e262a;
+      --muted: #5f6a6e;
+      --line: rgba(31, 44, 50, 0.12);
+      --accent: #1b6a73;
+      --accent-soft: rgba(27, 106, 115, 0.12);
+      --accent-strong: #0f4950;
+      --load: #4b9f5f;
+      --load-soft: rgba(75, 159, 95, 0.12);
+      --unload: #4d79c7;
+      --warn: #bf5a36;
+      --warn-soft: rgba(191, 90, 54, 0.12);
+      --vehicle-0: #d4513d;
+      --vehicle-1: #c48d28;
+      --vehicle-2: #6656b3;
+      --vehicle-3: #77573f;
+      --shadow: 0 22px 60px rgba(60, 47, 31, 0.12);
+      --font-ui: "Bahnschrift", "Segoe UI Variable Display", "Microsoft YaHei UI", sans-serif;
+      --font-mono: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      font-family: var(--font-ui);
+      background:
+        radial-gradient(circle at top left, rgba(27, 106, 115, 0.12), transparent 34%),
+        radial-gradient(circle at right 20%, rgba(196, 141, 40, 0.12), transparent 26%),
+        linear-gradient(180deg, #f4efe5 0%, #e4ddcf 100%);
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(30, 38, 42, 0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(30, 38, 42, 0.025) 1px, transparent 1px);
+      background-size: 24px 24px;
+      pointer-events: none;
+      opacity: 0.4;
+    }
+
+    .shell {
+      position: relative;
+      max-width: 1600px;
+      margin: 0 auto;
+      padding: 28px;
+      display: grid;
+      gap: 18px;
+    }
+
+    .topbar,
+    .command-grid,
+    .workspace,
+    .library-grid {
+      animation: rise 480ms ease both;
+    }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: minmax(0, 1.3fr) minmax(300px, 0.8fr);
+      gap: 16px;
+      align-items: end;
+    }
+
+    .brand {
+      padding: 4px 0;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--accent-strong);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+    }
+
+    .headline {
+      margin: 0;
+      font-size: clamp(30px, 5vw, 54px);
+      line-height: 0.98;
+      letter-spacing: -0.04em;
+    }
+
+    .subline {
+      margin: 12px 0 0;
+      max-width: 760px;
+      color: var(--muted);
+      line-height: 1.5;
+      font-size: 15px;
+    }
+
+    .status-board,
+    .command-panel,
+    .stage-panel,
+    .rail-panel,
+    .library-panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+
+    .status-board {
+      padding: 18px 20px;
+      display: grid;
+      gap: 10px;
+      align-content: start;
+      justify-items: start;
+    }
+
+    .status-board .small {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 34px;
+      padding: 0 14px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent-strong);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .status-pill[data-tone="warn"] {
+      background: var(--warn-soft);
+      color: #8c3c21;
+    }
+
+    .status-pill[data-tone="ok"] {
+      background: var(--load-soft);
+      color: #275a34;
+    }
+
+    .command-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .command-panel {
+      padding: 18px 18px 20px;
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }
+
+    .panel-title {
+      margin: 0;
+      font-size: 15px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+    }
+
+    .panel-copy {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.45;
+      font-size: 13px;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+
+    .field.full {
+      grid-column: 1 / -1;
+    }
+
+    label {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    input,
+    select,
+    button {
+      width: 100%;
+      border: 1px solid rgba(27, 106, 115, 0.16);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.92);
+      color: var(--ink);
+      padding: 12px 14px;
+      font: inherit;
+      transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+    }
+
+    input:focus,
+    select:focus,
+    button:focus {
+      outline: none;
+      border-color: rgba(27, 106, 115, 0.55);
+      box-shadow: 0 0 0 4px rgba(27, 106, 115, 0.12);
+    }
+
+    button {
+      cursor: pointer;
+      background: linear-gradient(135deg, #1c6d76 0%, #124f56 100%);
+      color: white;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    button.secondary {
+      background: rgba(255, 255, 255, 0.85);
+      color: var(--ink);
+    }
+
+    button:disabled,
+    input:disabled,
+    select:disabled {
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+
+    .command-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .job-stack {
+      display: grid;
+      gap: 10px;
+      max-height: 220px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .job-row,
+    .list-row {
+      display: grid;
+      gap: 4px;
+      padding: 12px 14px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid var(--line);
+    }
+
+    .job-meta,
+    .list-meta,
+    .mono {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(0, 1.3fr) minmax(360px, 0.9fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .stage-panel {
+      padding: 18px;
+      display: grid;
+      gap: 16px;
+    }
+
+    .stage-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 16px;
+    }
+
+    .stage-head h2 {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: -0.03em;
+    }
+
+    .stage-head .meta {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+      text-align: right;
+    }
+
+    .playback-bar {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto auto;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .playback-bar input[type="range"] {
+      padding: 0;
+      background: transparent;
+      border: none;
+      box-shadow: none;
+    }
+
+    .time-cluster {
+      display: grid;
+      justify-items: end;
+      gap: 2px;
+    }
+
+    .time-main {
+      font-family: var(--font-mono);
+      font-size: 20px;
+      color: var(--ink);
+    }
+
+    .time-sub {
+      color: var(--muted);
+      font-size: 12px;
+      font-family: var(--font-mono);
+    }
+
+    .track-wrap {
+      border-radius: 22px;
+      overflow: hidden;
+      border: 1px solid rgba(31, 44, 50, 0.1);
+      background:
+        radial-gradient(circle at 50% 50%, rgba(255, 252, 247, 1) 0%, rgba(239, 231, 213, 1) 58%, rgba(230, 220, 198, 1) 100%);
+      min-height: 620px;
+    }
+
+    svg.track {
+      width: 100%;
+      height: 100%;
+      display: block;
+      min-height: 620px;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px 16px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .legend span::before {
+      content: "";
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      display: inline-block;
+      background: var(--accent);
+    }
+
+    .legend .l-vehicle0::before { background: var(--vehicle-0); }
+    .legend .l-vehicle1::before { background: var(--vehicle-1); }
+    .legend .l-loading::before { background: var(--load); }
+    .legend .l-unloading::before { background: var(--unload); }
+    .legend .l-busy::before { background: var(--warn); }
+
+    .chart-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .chart-card {
+      padding: 14px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.75);
+      border: 1px solid var(--line);
+      display: grid;
+      gap: 8px;
+    }
+
+    .chart-card.wide {
+      grid-column: 1 / -1;
+    }
+
+    .chart-label {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+
+    .chart-svg {
+      width: 100%;
+      height: 150px;
+      display: block;
+    }
+
+    .rail {
+      display: grid;
+      gap: 14px;
+      align-content: start;
+      max-height: calc(100vh - 72px);
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .rail-panel {
+      padding: 16px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .metric {
+      padding: 14px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.75);
+    }
+
+    .metric-label {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .metric-value {
+      display: block;
+      margin-top: 6px;
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.04em;
+    }
+
+    .data-list {
+      display: grid;
+      gap: 10px;
+      max-height: 360px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .data-card {
+      padding: 12px 14px;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.75);
+      display: grid;
+      gap: 8px;
+    }
+
+    .data-card strong {
+      font-size: 15px;
+      letter-spacing: -0.02em;
+    }
+
+    .kv {
+      display: grid;
+      gap: 4px;
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .kv code {
+      font-family: var(--font-mono);
+      color: var(--ink);
+      background: rgba(27, 106, 115, 0.08);
+      padding: 1px 6px;
+      border-radius: 999px;
+    }
+
+    .chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      color: var(--ink);
+      background: rgba(27, 106, 115, 0.08);
+      border: 1px solid rgba(27, 106, 115, 0.12);
+    }
+
+    .chip.warn {
+      background: var(--warn-soft);
+      border-color: rgba(191, 90, 54, 0.16);
+      color: #8c3c21;
+    }
+
+    .chip.ok {
+      background: var(--load-soft);
+      border-color: rgba(75, 159, 95, 0.18);
+      color: #275a34;
+    }
+
+    .chip.alt {
+      background: rgba(77, 121, 199, 0.08);
+      border-color: rgba(77, 121, 199, 0.16);
+      color: #264f95;
+    }
+
+    .library-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+      gap: 16px;
+    }
+
+    .library-panel {
+      padding: 16px;
+      display: grid;
+      gap: 12px;
+      align-content: start;
+    }
+
+    .list-stack {
+      display: grid;
+      gap: 10px;
+      max-height: 340px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .list-row {
+      cursor: pointer;
+      transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+    }
+
+    .list-row:hover {
+      transform: translateY(-2px);
+      border-color: rgba(27, 106, 115, 0.22);
+    }
+
+    .list-row.active {
+      background: rgba(27, 106, 115, 0.12);
+      border-color: rgba(27, 106, 115, 0.28);
+    }
+
+    .empty {
+      padding: 14px;
+      border-radius: 18px;
+      border: 1px dashed rgba(31, 44, 50, 0.18);
+      color: var(--muted);
+      font-size: 13px;
+      background: rgba(255, 255, 255, 0.45);
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    @keyframes rise {
+      from {
+        opacity: 0;
+        transform: translateY(12px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @media (max-width: 1280px) {
+      .topbar,
+      .workspace,
+      .library-grid,
+      .command-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .rail {
+        max-height: none;
+      }
+    }
+
+    @media (max-width: 780px) {
+      .shell {
+        padding: 16px;
+      }
+
+      .playback-bar,
+      .form-grid,
+      .metric-grid,
+      .chart-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .track-wrap,
+      svg.track {
+        min-height: 480px;
+      }
+
+      .stage-head {
+        grid-template-columns: 1fr;
+        display: grid;
+      }
+
+      .stage-head .meta {
+        text-align: left;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="topbar">
+      <div class="brand">
+        <p class="eyebrow">AGV Replay / Train / Test</p>
+        <h1 class="headline">Circular Track Simulation Workbench</h1>
+        <p class="subline">
+          统一查看训练、测试与离线回放。页面会展示 `visualizer.py` 中的轨道视图、车辆状态、上下料站细节、货物字段、告警和历史统计，并在本地服务模式下直接调用 train / test。
+        </p>
+      </div>
+      <aside class="status-board">
+        <div class="status-pill" id="bootStatus" data-tone="warn">正在检查本地服务与回放数据</div>
+        <div class="small" id="workspaceHint">工作区尚未连接本地后端时，页面仍可打开嵌入式 episode 回放。</div>
+        <div class="mono" id="runtimeMeta">模式: 未初始化</div>
+      </aside>
+    </section>
+
+    <section class="command-grid">
+      <form class="command-panel" id="trainForm">
+        <h2 class="panel-title">训练任务</h2>
+        <p class="panel-copy">通过本地 Python 服务运行 `TrainingManager`。每个 episode 都会落盘为可回放产物，并在训练结束后保存 `best` 与 `final` 两组模型。</p>
+        <div class="form-grid">
+          <div class="field">
+            <label for="trainEpisodes">Episode 数</label>
+            <input id="trainEpisodes" type="number" min="1" step="1" value="5" />
+          </div>
+          <div class="field">
+            <label for="trainSampleInterval">回放采样间隔 (s)</label>
+            <input id="trainSampleInterval" type="number" min="0.5" step="0.5" value="5.0" />
+          </div>
+          <div class="field full">
+            <label>说明</label>
+            <div class="empty">训练 episode 时长仍使用 [config.py](/E:/Desktop/coding/gitclone/Work/AGV/config.py) 中的 `EPISODE_DURATION`。页面仅负责触发任务、管理模型和保存可回放产物。</div>
+          </div>
+        </div>
+        <div class="command-actions">
+          <button id="trainButton" type="submit">启动训练</button>
+          <button class="secondary" id="refreshButton" type="button">刷新状态</button>
+        </div>
+      </form>
+
+      <form class="command-panel" id="testForm">
+        <h2 class="panel-title">测试任务</h2>
+        <p class="panel-copy">选择当前项目中的模型组进行 deterministic 推理测试。每个测试 episode 都会保存独立回放，可直接在下方列表中切换。</p>
+        <div class="form-grid">
+          <div class="field full">
+            <label for="modelSelect">模型组</label>
+            <select id="modelSelect"></select>
+          </div>
+          <div class="field">
+            <label for="testEpisodes">Episode 数</label>
+            <input id="testEpisodes" type="number" min="1" step="1" value="1" />
+          </div>
+          <div class="field">
+            <label for="testSeed">起始 Seed</label>
+            <input id="testSeed" type="number" min="0" step="1" value="42" />
+          </div>
+          <div class="field">
+            <label for="testSampleInterval">回放采样间隔 (s)</label>
+            <input id="testSampleInterval" type="number" min="0.5" step="0.5" value="5.0" />
+          </div>
+          <div class="field">
+            <label for="testDuration">仿真时长 (s)</label>
+            <input id="testDuration" type="number" min="1" step="1" value="28800" />
+          </div>
+        </div>
+        <div class="command-actions">
+          <button id="testButton" type="submit">启动测试</button>
+        </div>
+      </form>
+
+      <section class="command-panel">
+        <h2 class="panel-title">任务监控</h2>
+        <p class="panel-copy">这里显示 train / test 当前任务的进度、最近生成的 episode，以及模型保存结果。</p>
+        <div class="job-stack" id="jobList"></div>
+      </section>
+    </section>
+
+    <section class="workspace">
+      <section class="stage-panel">
+        <div class="stage-head">
+          <div>
+            <h2 id="episodeTitle">尚未载入 episode</h2>
+            <div class="panel-copy" id="episodeSubtitle">可通过下方 Episode Library 选择已有回放，或先启动 train / test。</div>
+          </div>
+          <div class="meta" id="episodeMeta">等待数据</div>
+        </div>
+
+        <div class="playback-bar">
+          <button id="playButton" type="button">播放</button>
+          <input id="timeSlider" type="range" min="0" max="0" step="1" value="0" />
+          <div class="time-cluster">
+            <div class="time-main" id="timeLabel">00:00:00</div>
+            <div class="time-sub" id="frameLabel">Frame 0 / 0</div>
+          </div>
+          <select id="speedSelect">
+            <option value="0.5">0.5x</option>
+            <option value="1" selected>1x</option>
+            <option value="2">2x</option>
+            <option value="4">4x</option>
+          </select>
+        </div>
+
+        <div class="track-wrap">
+          <svg id="trackCanvas" class="track" viewBox="-120 -120 240 240" aria-label="AGV circular track"></svg>
+        </div>
+
+        <div class="legend">
+          <span class="l-vehicle0">Vehicle 0</span>
+          <span class="l-vehicle1">Vehicle 1</span>
+          <span class="l-loading">Loading station</span>
+          <span class="l-unloading">Unloading station</span>
+          <span class="l-busy">装卸中</span>
+        </div>
+
+        <section class="chart-grid">
+          <div class="chart-card">
+            <div class="chart-label">完成 / 超时</div>
+            <svg id="chartCompleted" class="chart-svg" viewBox="0 0 300 150"></svg>
+          </div>
+          <div class="chart-card">
+            <div class="chart-label">平均等待时间</div>
+            <svg id="chartWait" class="chart-svg" viewBox="0 0 300 150"></svg>
+          </div>
+          <div class="chart-card">
+            <div class="chart-label">系统货物数</div>
+            <svg id="chartCargo" class="chart-svg" viewBox="0 0 300 150"></svg>
+          </div>
+          <div class="chart-card">
+            <div class="chart-label">车辆速度</div>
+            <svg id="chartVelocity" class="chart-svg" viewBox="0 0 300 150"></svg>
+          </div>
+          <div class="chart-card wide">
+            <div class="chart-label">车辆位置轨迹</div>
+            <svg id="chartPosition" class="chart-svg" viewBox="0 0 620 150"></svg>
+          </div>
+        </section>
+      </section>
+
+      <aside class="rail">
+        <section class="rail-panel">
+          <h2 class="panel-title">系统指标</h2>
+          <div class="metric-grid" id="metricGrid"></div>
+        </section>
+
+        <section class="rail-panel">
+          <h2 class="panel-title">车辆状态</h2>
+          <div class="data-list" id="vehicleList"></div>
+        </section>
+
+        <section class="rail-panel">
+          <h2 class="panel-title">上料口状态</h2>
+          <div class="data-list" id="loadingList"></div>
+        </section>
+
+        <section class="rail-panel">
+          <h2 class="panel-title">下料口状态</h2>
+          <div class="data-list" id="unloadingList"></div>
+        </section>
+
+        <section class="rail-panel">
+          <h2 class="panel-title">等待货物</h2>
+          <div class="data-list" id="waitingCargoList"></div>
+        </section>
+
+        <section class="rail-panel">
+          <h2 class="panel-title">活跃货物</h2>
+          <div class="data-list" id="activeCargoList"></div>
+        </section>
+
+        <section class="rail-panel">
+          <h2 class="panel-title">最近完成货物</h2>
+          <div class="data-list" id="completedList"></div>
+        </section>
+
+        <section class="rail-panel">
+          <h2 class="panel-title">最近告警</h2>
+          <div class="data-list" id="alertList"></div>
+        </section>
+
+        <section class="rail-panel">
+          <h2 class="panel-title">回放元数据</h2>
+          <div class="data-list" id="summaryList"></div>
+        </section>
+      </aside>
+    </section>
+
+    <section class="library-grid">
+      <section class="library-panel">
+        <h2 class="panel-title">Episode Library</h2>
+        <p class="panel-copy">训练和测试生成的每个 episode 都会在这里留档，点击即可切换到对应回放。</p>
+        <div class="list-stack" id="episodeLibrary"></div>
+      </section>
+
+      <section class="library-panel">
+        <h2 class="panel-title">Model Library</h2>
+        <p class="panel-copy">按 `*_v0.pth / *_v1.pth` 自动聚合成模型组。训练完成后会出现新的 `*_best` 和 `*_final` 模型可直接测试。</p>
+        <div class="list-stack" id="modelLibrary"></div>
+      </section>
+    </section>
+  </div>
+  <script>
+    window.__SIMULATION_BOOTSTRAP__ = null;
+
+    const state = {
+      hasApi: location.protocol.startsWith("http"),
+      apiEnabled: false,
+      embeddedMode: Boolean(window.__SIMULATION_BOOTSTRAP__ && window.__SIMULATION_BOOTSTRAP__.episode),
+      episode: window.__SIMULATION_BOOTSTRAP__ ? window.__SIMULATION_BOOTSTRAP__.episode : null,
+      jobs: [],
+      models: [],
+      episodes: [],
+      currentEpisodeId: null,
+      currentIndex: 0,
+      playing: false,
+      timerId: null,
+    };
+
+    const dom = {
+      bootStatus: document.getElementById("bootStatus"),
+      workspaceHint: document.getElementById("workspaceHint"),
+      runtimeMeta: document.getElementById("runtimeMeta"),
+      trainForm: document.getElementById("trainForm"),
+      testForm: document.getElementById("testForm"),
+      trainEpisodes: document.getElementById("trainEpisodes"),
+      trainSampleInterval: document.getElementById("trainSampleInterval"),
+      modelSelect: document.getElementById("modelSelect"),
+      testEpisodes: document.getElementById("testEpisodes"),
+      testSeed: document.getElementById("testSeed"),
+      testSampleInterval: document.getElementById("testSampleInterval"),
+      testDuration: document.getElementById("testDuration"),
+      refreshButton: document.getElementById("refreshButton"),
+      jobList: document.getElementById("jobList"),
+      episodeTitle: document.getElementById("episodeTitle"),
+      episodeSubtitle: document.getElementById("episodeSubtitle"),
+      episodeMeta: document.getElementById("episodeMeta"),
+      playButton: document.getElementById("playButton"),
+      timeSlider: document.getElementById("timeSlider"),
+      speedSelect: document.getElementById("speedSelect"),
+      timeLabel: document.getElementById("timeLabel"),
+      frameLabel: document.getElementById("frameLabel"),
+      trackCanvas: document.getElementById("trackCanvas"),
+      metricGrid: document.getElementById("metricGrid"),
+      vehicleList: document.getElementById("vehicleList"),
+      loadingList: document.getElementById("loadingList"),
+      unloadingList: document.getElementById("unloadingList"),
+      waitingCargoList: document.getElementById("waitingCargoList"),
+      activeCargoList: document.getElementById("activeCargoList"),
+      completedList: document.getElementById("completedList"),
+      alertList: document.getElementById("alertList"),
+      summaryList: document.getElementById("summaryList"),
+      episodeLibrary: document.getElementById("episodeLibrary"),
+      modelLibrary: document.getElementById("modelLibrary"),
+      chartCompleted: document.getElementById("chartCompleted"),
+      chartWait: document.getElementById("chartWait"),
+      chartCargo: document.getElementById("chartCargo"),
+      chartVelocity: document.getElementById("chartVelocity"),
+      chartPosition: document.getElementById("chartPosition"),
+    };
+
+    const palette = ["#d4513d", "#c48d28", "#6656b3", "#77573f"];
+
+    function setStatus(message, tone = "warn") {
+      dom.bootStatus.textContent = message;
+      dom.bootStatus.dataset.tone = tone;
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function number(value, digits = 2) {
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed)) {
+        return "--";
+      }
+      return parsed.toFixed(digits);
+    }
+
+    function formatTime(totalSeconds) {
+      const seconds = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+      const hh = String(Math.floor(seconds / 3600)).padStart(2, "0");
+      const mm = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0");
+      const ss = String(seconds % 60).padStart(2, "0");
+      return `${hh}:${mm}:${ss}`;
+    }
+
+    function currentFrames() {
+      return state.episode?.frames || [];
+    }
+
+    function currentSummary() {
+      return state.episode?.summary || {};
+    }
+
+    function currentStatistics() {
+      return state.episode?.statistics || {};
+    }
+
+    function currentFrame(index = state.currentIndex) {
+      const frames = currentFrames();
+      if (!frames.length) {
+        return {
+          time: 0,
+          system: {
+            completed_cargos: 0,
+            timed_out_cargos: 0,
+            avg_wait_time: 0,
+            current_cargos: 0,
+            generated_cargos: 0,
+            waiting_cargos: 0,
+            on_vehicle_cargos: 0,
+            safety_warning_count: 0,
+            collision_alert_count: 0,
+            safety_violations: [],
+          },
+          vehicles: [],
+          loading_stations: [],
+          unloading_stations: [],
+          waiting_cargos: [],
+          active_cargos: [],
+          recent_completed_cargos: [],
+          recent_alerts: [],
+        };
+      }
+      return frames[index] || frames[0];
+    }
+
+    function createSvg(tag, attrs = {}) {
+      const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+      Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, String(value)));
+      return node;
+    }
+
+    function trackLength() {
+      return Number(currentSummary().track_length || 100);
+    }
+
+    function toPoint(position, radius = 82) {
+      const angle = (-2 * Math.PI * Number(position || 0) / trackLength()) + Math.PI / 2;
+      return {
+        x: radius * Math.cos(angle),
+        y: radius * Math.sin(angle),
+        angle,
+      };
+    }
+
+    function renderTrack(frame) {
+      const svg = dom.trackCanvas;
+      svg.innerHTML = "";
+
+      svg.appendChild(createSvg("circle", { cx: 0, cy: 0, r: 82, fill: "none", stroke: "#b5964b", "stroke-width": 7 }));
+      svg.appendChild(createSvg("circle", {
+        cx: 0,
+        cy: 0,
+        r: 70,
+        fill: "none",
+        stroke: "rgba(31, 44, 50, 0.18)",
+        "stroke-width": 1.5,
+        "stroke-dasharray": "4 6",
+      }));
+
+      (frame.loading_stations || []).forEach((station) => {
+        const point = toPoint(station.position);
+        svg.appendChild(createSvg("rect", {
+          x: point.x - 6, y: point.y - 6, width: 12, height: 12, rx: 3,
+          fill: "#4b9f5f", stroke: "#2b6137", "stroke-width": 1.4,
+        }));
+        const label = createSvg("text", {
+          x: point.x + 9, y: point.y - 8, "font-size": 6, fill: "#275a34",
+          "font-family": "Cascadia Mono, Consolas, monospace",
+        });
+        label.textContent = `IP${station.id}`;
+        svg.appendChild(label);
+
+        (station.slots || []).forEach((slot) => {
+          if (!slot.occupied) return;
+          const offset = slot.slot_index === 0 ? 7 : -7;
+          const cargoX = point.x + offset * Math.cos(point.angle + Math.PI / 2);
+          const cargoY = point.y + offset * Math.sin(point.angle + Math.PI / 2);
+          svg.appendChild(createSvg("rect", {
+            x: cargoX - 2.4, y: cargoY - 2.4, width: 4.8, height: 4.8,
+            fill: "#f0c44f", stroke: "#b8781d", "stroke-width": 0.8,
+          }));
+          const cargoLabel = createSvg("text", {
+            x: cargoX, y: cargoY - 4.8, "font-size": 4.5, "text-anchor": "middle",
+            fill: "#173742", "font-family": "Cascadia Mono, Consolas, monospace",
+          });
+          cargoLabel.textContent = slot.destination_text || "";
+          svg.appendChild(cargoLabel);
+        });
+      });
+
+      (frame.unloading_stations || []).forEach((station) => {
+        const point = toPoint(station.position);
+        svg.appendChild(createSvg("rect", {
+          x: point.x - 6, y: point.y - 6, width: 12, height: 12, rx: 2.5,
+          fill: "#4d79c7", stroke: "#264f95", "stroke-width": 1.4,
+        }));
+        const label = createSvg("text", {
+          x: point.x + 9, y: point.y + 12, "font-size": 6, fill: "#264f95",
+          "font-family": "Cascadia Mono, Consolas, monospace",
+        });
+        label.textContent = `OP${station.id}`;
+        svg.appendChild(label);
+      });
+
+      (frame.vehicles || []).forEach((vehicle) => {
+        const point = toPoint(vehicle.position);
+        const color = palette[vehicle.id % palette.length];
+        svg.appendChild(createSvg("circle", {
+          cx: point.x, cy: point.y, r: 7, fill: color,
+          stroke: vehicle.is_loading_unloading ? "#7d2f24" : "#21353c",
+          "stroke-width": vehicle.is_loading_unloading ? 3 : 1.8,
+        }));
+
+        if (Math.abs(Number(vehicle.velocity || 0)) > 0.1) {
+          const tangent = point.angle - Math.PI / 2;
+          const arrowLength = Math.min(Math.abs(Number(vehicle.velocity || 0)) * 2.2, 14);
+          const endX = point.x + arrowLength * Math.cos(tangent);
+          const endY = point.y + arrowLength * Math.sin(tangent);
+          svg.appendChild(createSvg("line", {
+            x1: point.x, y1: point.y, x2: endX, y2: endY,
+            stroke: "#f0c44f", "stroke-width": 2.2, "stroke-linecap": "round",
+          }));
+          svg.appendChild(createSvg("circle", { cx: endX, cy: endY, r: 1.8, fill: "#f0c44f" }));
+        }
+
+        const label = createSvg("text", {
+          x: point.x, y: point.y + 2, "font-size": 4.8, "text-anchor": "middle",
+          fill: "white", "font-weight": "700", "font-family": "Bahnschrift, Segoe UI, sans-serif",
+        });
+        label.textContent = `V${vehicle.id}`;
+        svg.appendChild(label);
+
+        if (Number(vehicle.slot_count || 0) > 0) {
+          const cargoLabel = createSvg("text", {
+            x: point.x * 0.84, y: point.y * 0.84, "font-size": 5, "text-anchor": "middle",
+            fill: "#5d4308", "font-family": "Cascadia Mono, Consolas, monospace",
+          });
+          cargoLabel.textContent = vehicle.cargo_label || `Box x${vehicle.slot_count}`;
+          svg.appendChild(cargoLabel);
+        }
+      });
+    }
+
+    function renderMetrics(frame) {
+      const system = frame.system || {};
+      const metrics = [
+        ["完成货物", system.completed_cargos ?? 0],
+        ["超时货物", system.timed_out_cargos ?? 0],
+        ["平均等待(s)", number(system.avg_wait_time ?? 0, 1)],
+        ["当前货物", system.current_cargos ?? 0],
+        ["等待货物", system.waiting_cargos ?? 0],
+        ["在车货物", system.on_vehicle_cargos ?? 0],
+        ["告警数", system.safety_warning_count ?? 0],
+        ["碰撞数", system.collision_alert_count ?? 0],
+      ];
+      dom.metricGrid.innerHTML = metrics.map(([label, value]) => `
+        <div class="metric">
+          <span class="metric-label">${escapeHtml(label)}</span>
+          <span class="metric-value">${escapeHtml(value)}</span>
+        </div>
+      `).join("");
+    }
+
+    function renderVehicleCards(frame) {
+      const vehicles = frame.vehicles || [];
+      if (!vehicles.length) {
+        dom.vehicleList.innerHTML = '<div class="empty">当前帧没有车辆数据。</div>';
+        return;
+      }
+      dom.vehicleList.innerHTML = vehicles.map((vehicle) => {
+        const slots = (vehicle.slots || []).map((slot) => {
+          if (!slot.occupied) {
+            return `<div>工位 ${slot.slot_index + 1}: <code>Empty</code></div>`;
+          }
+          return `<div>工位 ${slot.slot_index + 1}: <code>C${slot.cargo_id}</code> -> <code>${escapeHtml(slot.destination_text || "--")}</code></div>`;
+        }).join("");
+        const operation = vehicle.operation || {};
+        const chips = [
+          `<span class="chip ${vehicle.is_loading_unloading ? "warn" : "ok"}">${escapeHtml(vehicle.status_text || "Ready")}</span>`,
+        ];
+        if (operation.remaining_time != null) {
+          chips.push(`<span class="chip alt">剩余 ${number(operation.remaining_time, 1)}s</span>`);
+        }
+        return `
+          <div class="data-card">
+            <strong>Vehicle ${vehicle.id}</strong>
+            <div class="chip-row">${chips.join("")}</div>
+            <div class="kv">
+              <div>位置: <code>${number(vehicle.position, 2)}</code></div>
+              <div>速度: <code>${number(vehicle.velocity, 2)}</code></div>
+              <div>载货数: <code>${vehicle.slot_count ?? 0}</code></div>
+            </div>
+            <div class="kv">${slots}</div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderLoadingStations(frame) {
+      const stations = frame.loading_stations || [];
+      if (!stations.length) {
+        dom.loadingList.innerHTML = '<div class="empty">当前帧没有上料口数据。</div>';
+        return;
+      }
+      dom.loadingList.innerHTML = stations.map((station) => {
+        const slots = (station.slots || []).map((slot) => {
+          if (!slot.occupied) {
+            return `<div>工位 ${slot.slot_index + 1}: <code>Empty</code></div>`;
+          }
+          const chips = [`<span class="chip">${slot.destination_text ? escapeHtml(slot.destination_text) : "--"}</span>`];
+          if (slot.assigned_vehicle != null) {
+            chips.push(`<span class="chip alt">V${slot.assigned_vehicle} / S${(slot.assigned_vehicle_slot ?? 0) + 1}</span>`);
+          }
+          if (slot.is_timeout) {
+            chips.push('<span class="chip warn">Timeout</span>');
+          }
+          return `
+            <div>
+              工位 ${slot.slot_index + 1}: <code>C${slot.cargo_id}</code>
+              <div class="chip-row">${chips.join("")}</div>
+              <div class="mono">等待 ${number(slot.wait_time, 1)}s</div>
+            </div>
+          `;
+        }).join("");
+        return `
+          <div class="data-card">
+            <strong>IP${station.id}</strong>
+            <div class="kv">
+              <div>位置: <code>${number(station.position, 2)}</code></div>
+              <div>占用工位: <code>${station.occupied_slots}</code></div>
+            </div>
+            <div class="kv">${slots}</div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderUnloadingStations(frame) {
+      const stations = frame.unloading_stations || [];
+      if (!stations.length) {
+        dom.unloadingList.innerHTML = '<div class="empty">当前帧没有下料口数据。</div>';
+        return;
+      }
+      dom.unloadingList.innerHTML = stations.map((station) => `
+        <div class="data-card">
+          <strong>OP${station.id}</strong>
+          <div class="kv">
+            <div>位置: <code>${number(station.position, 2)}</code></div>
+            <div>${escapeHtml(station.description || "Unlimited receiving")}</div>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function renderWaitingCargos(frame) {
+      const cargos = frame.waiting_cargos || [];
+      if (!cargos.length) {
+        dom.waitingCargoList.innerHTML = '<div class="empty">当前没有等待中的货物。</div>';
+        return;
+      }
+      dom.waitingCargoList.innerHTML = cargos.map((cargo) => `
+        <div class="data-card">
+          <strong>C${cargo.id}</strong>
+          <div class="chip-row">
+            <span class="chip">${escapeHtml(cargo.destination_text || "--")}</span>
+            ${cargo.is_timeout ? '<span class="chip warn">Timeout</span>' : '<span class="chip ok">Waiting</span>'}
+            ${cargo.assigned_vehicle != null ? `<span class="chip alt">V${cargo.assigned_vehicle}</span>` : ""}
+          </div>
+          <div class="kv">
+            <div>上料口: <code>IP${cargo.loading_station}</code> / 工位 <code>${(cargo.loading_slot ?? 0) + 1}</code></div>
+            <div>等待时间: <code>${number(cargo.wait_time, 1)}s</code></div>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function renderActiveCargos(frame) {
+      const cargos = frame.active_cargos || [];
+      if (!cargos.length) {
+        dom.activeCargoList.innerHTML = '<div class="empty">当前没有活跃货物。</div>';
+        return;
+      }
+      dom.activeCargoList.innerHTML = cargos.map((cargo) => {
+        let locationText = "unknown";
+        if (cargo.location?.type === "loading_station") {
+          locationText = `IP${cargo.location.station_id} / S${(cargo.location.slot_index ?? 0) + 1}`;
+        } else if (cargo.location?.type === "vehicle") {
+          locationText = `V${cargo.location.vehicle_id} / S${(cargo.location.vehicle_slot_index ?? 0) + 1}`;
+        }
+        return `
+          <div class="data-card">
+            <strong>C${cargo.id}</strong>
+            <div class="chip-row">
+              <span class="chip">${escapeHtml(cargo.destination_text || "--")}</span>
+              ${cargo.is_timeout ? '<span class="chip warn">Timeout</span>' : ""}
+              ${cargo.target_unloading_station != null ? `<span class="chip alt">OP${cargo.target_unloading_station}</span>` : ""}
+            </div>
+            <div class="kv">
+              <div>位置: <code>${escapeHtml(locationText)}</code></div>
+              <div>等待时间: <code>${number(cargo.wait_time, 1)}s</code></div>
+              <div>assigned_vehicle: <code>${cargo.assigned_vehicle ?? "--"}</code></div>
+              <div>picked_up_time: <code>${cargo.picked_up_time ?? "--"}</code></div>
+              <div>loading_start_time: <code>${cargo.loading_start_time ?? "--"}</code></div>
+              <div>unloading_start_time: <code>${cargo.unloading_start_time ?? "--"}</code></div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderCompleted(frame) {
+      const items = frame.recent_completed_cargos || [];
+      if (!items.length) {
+        dom.completedList.innerHTML = '<div class="empty">当前帧还没有最近完成货物。</div>';
+        return;
+      }
+      dom.completedList.innerHTML = items.slice().reverse().map((cargo) => `
+        <div class="data-card">
+          <strong>C${cargo.id}</strong>
+          <div class="chip-row">
+            <span class="chip ok">IP${cargo.loading_station} -> OP${cargo.unloading_station}</span>
+            <span class="chip alt">V${cargo.vehicle_id}</span>
+          </div>
+          <div class="kv">
+            <div>等待时间: <code>${number(cargo.wait_time, 1)}s</code></div>
+            <div>完成时刻: <code>${number(cargo.completion_time, 1)}s</code></div>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function renderAlerts(frame) {
+      const alerts = frame.recent_alerts || [];
+      if (!alerts.length) {
+        dom.alertList.innerHTML = '<div class="empty">当前帧没有告警。</div>';
+        return;
+      }
+      dom.alertList.innerHTML = alerts.slice().reverse().map((alert) => `
+        <div class="data-card">
+          <strong>${escapeHtml(String(alert.level || "").toUpperCase())}</strong>
+          <div class="chip-row">
+            <span class="chip ${alert.level === "collision" ? "warn" : "alt"}">${escapeHtml(alert.vehicle_ids?.map((id) => `V${id}`).join(" / ") || "--")}</span>
+          </div>
+          <div class="kv">
+            <div>时间: <code>${number(alert.time, 1)}s</code></div>
+            <div>距离: <code>${number(alert.distance, 3)}</code></div>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function renderSummary(frame) {
+      const summary = currentSummary();
+      const system = frame.system || {};
+      const mappingEntries = Object.entries(summary.model_mapping || {});
+      const chips = [];
+      if (summary.kind) chips.push(`<span class="chip alt">${escapeHtml(summary.kind)}</span>`);
+      if (summary.controller_mode) chips.push(`<span class="chip">${escapeHtml(summary.controller_mode)}</span>`);
+      if (summary.seed != null) chips.push(`<span class="chip">seed ${summary.seed}</span>`);
+      if (summary.visualization_sampling_interval != null) chips.push(`<span class="chip">采样 ${number(summary.visualization_sampling_interval, 1)}s</span>`);
+      if ((system.safety_violations || []).length) chips.push(`<span class="chip warn">Safety V${system.safety_violations.join(", V")}</span>`);
+
+      dom.summaryList.innerHTML = `
+        <div class="data-card">
+          <strong>运行摘要</strong>
+          <div class="chip-row">${chips.join("") || '<span class="chip">无</span>'}</div>
+          <div class="kv">
+            <div>job_id: <code>${escapeHtml(summary.job_id || "--")}</code></div>
+            <div>episode_id: <code>${escapeHtml(summary.episode_id || "--")}</code></div>
+            <div>episode_index: <code>${escapeHtml(summary.episode_index || "--")}</code></div>
+            <div>生成货物: <code>${summary.generated_cargos ?? "--"}</code></div>
+            <div>平均完成时间: <code>${number(summary.average_completion_time, 1)}s</code></div>
+            <div>创建时间: <code>${escapeHtml(summary.created_at || "--")}</code></div>
+          </div>
+        </div>
+        <div class="data-card">
+          <strong>模型映射</strong>
+          <div class="kv">
+            ${mappingEntries.length ? mappingEntries.map(([vehicleId, path]) => `<div>V${vehicleId}: <code>${escapeHtml(path)}</code></div>`).join("") : "<div>训练回放没有固定模型映射，使用的是当时的在线策略状态。</div>"}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderEpisodeHeader(frame) {
+      const summary = currentSummary();
+      dom.episodeTitle.textContent = summary.episode_id || summary.run_label || "AGV Episode Replay";
+      dom.episodeSubtitle.textContent = summary.kind === "train"
+        ? "训练 episode 回放，包含当次采样状态、货物字段、站点状态与历史统计。"
+        : "测试 episode 回放，使用选定模型做 deterministic 推理。";
+      dom.episodeMeta.innerHTML = `
+        kind: ${escapeHtml(summary.kind || "--")}<br/>
+        episode: ${escapeHtml(summary.episode_index || "--")}<br/>
+        seed: ${escapeHtml(summary.seed || "--")}<br/>
+        duration: ${number(summary.episode_duration, 0)}s
+      `;
+      dom.timeLabel.textContent = formatTime(frame.time || 0);
+      dom.frameLabel.textContent = `Frame ${state.currentIndex + 1} / ${Math.max(currentFrames().length, 1)}`;
+      dom.runtimeMeta.textContent = `模式: ${state.apiEnabled ? "本地后端已连接" : (state.embeddedMode ? "嵌入式回放" : "离线模板")}`;
+    }
+
+    function renderFrame(index) {
+      const frames = currentFrames();
+      state.currentIndex = Math.min(Math.max(index, 0), Math.max(frames.length - 1, 0));
+      dom.timeSlider.value = String(state.currentIndex);
+      const frame = currentFrame(state.currentIndex);
+      renderEpisodeHeader(frame);
+      renderTrack(frame);
+      renderMetrics(frame);
+      renderVehicleCards(frame);
+      renderLoadingStations(frame);
+      renderUnloadingStations(frame);
+      renderWaitingCargos(frame);
+      renderActiveCargos(frame);
+      renderCompleted(frame);
+      renderAlerts(frame);
+      renderSummary(frame);
+    }
+
+    function chartSeriesPath(points, width, height, minValue, maxValue) {
+      if (!points.length) return "";
+      const range = maxValue - minValue || 1;
+      return points.map((value, index) => {
+        const x = (index / Math.max(points.length - 1, 1)) * width;
+        const y = height - ((value - minValue) / range) * height;
+        return `${index === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
+      }).join(" ");
+    }
+
+    function renderChart(svg, series, width, height) {
+      svg.innerHTML = "";
+      const values = series.flatMap((item) => item.values).filter((value) => Number.isFinite(Number(value)));
+      if (!values.length) {
+        const text = createSvg("text", {
+          x: width / 2,
+          y: height / 2,
+          "text-anchor": "middle",
+          fill: "#6a7478",
+          "font-size": 12,
+          "font-family": "Cascadia Mono, Consolas, monospace",
+        });
+        text.textContent = "No data";
+        svg.appendChild(text);
+        return;
+      }
+      const minValue = Math.min(...values);
+      const maxValue = Math.max(...values);
+      svg.appendChild(createSvg("rect", { x: 0, y: 0, width, height, rx: 16, fill: "rgba(255,255,255,0.55)" }));
+      [0.2, 0.5, 0.8].forEach((ratio) => {
+        svg.appendChild(createSvg("line", {
+          x1: 0, y1: height * ratio, x2: width, y2: height * ratio,
+          stroke: "rgba(31, 44, 50, 0.09)", "stroke-width": 1,
+        }));
+      });
+      series.forEach((item) => {
+        svg.appendChild(createSvg("path", {
+          d: chartSeriesPath(item.values.map((value) => Number(value)), width, height, minValue, maxValue),
+          fill: "none",
+          stroke: item.color,
+          "stroke-width": item.width || 2.4,
+          "stroke-linecap": "round",
+          "stroke-linejoin": "round",
+        }));
+      });
+    }
+
+    function renderCharts() {
+      const statistics = currentStatistics();
+      const widthStandard = 300;
+      const height = 150;
+      const widthWide = 620;
+      const vehicleIds = Object.keys(statistics.vehicle_positions || {});
+      const seriesColor = (vehicleId) =>
+        getComputedStyle(document.documentElement).getPropertyValue(`--vehicle-${vehicleId}`) ||
+        ["#d4513d", "#c48d28", "#6656b3", "#77573f"][Number(vehicleId) % 4];
+
+      renderChart(dom.chartCompleted, [
+        { values: statistics.completed || [], color: "#4b9f5f" },
+        { values: statistics.timeout || [], color: "#bf5a36" },
+      ], widthStandard, height);
+      renderChart(dom.chartWait, [{ values: statistics.avg_wait_time || [], color: "#176087" }], widthStandard, height);
+      renderChart(dom.chartCargo, [
+        { values: statistics.cargo_count || [], color: "#6e4f1f" },
+        { values: statistics.waiting_cargos || [], color: "#8b6a36" },
+        { values: statistics.on_vehicle_cargos || [], color: "#20303a" },
+      ], widthStandard, height);
+      renderChart(dom.chartVelocity, vehicleIds.map((vehicleId) => ({
+        values: statistics.vehicle_velocities?.[vehicleId] || [],
+        color: seriesColor(vehicleId),
+      })), widthStandard, height);
+      renderChart(dom.chartPosition, vehicleIds.map((vehicleId) => ({
+        values: statistics.vehicle_positions?.[vehicleId] || [],
+        color: seriesColor(vehicleId),
+      })), widthWide, height);
+    }
+
+    function populateModelSelect() {
+      const options = state.models
+        .filter((model) => model.complete)
+        .map((model) => `<option value="${escapeHtml(model.id)}">${escapeHtml(model.id)}</option>`)
+        .join("");
+      dom.modelSelect.innerHTML = options || '<option value="">暂无完整模型组</option>';
+      dom.modelSelect.disabled = !options;
+    }
+
+    function renderJobs() {
+      if (!state.jobs.length) {
+        dom.jobList.innerHTML = '<div class="empty">当前没有运行中的任务。</div>';
+        return;
+      }
+      dom.jobList.innerHTML = state.jobs.map((job) => `
+        <div class="job-row">
+          <strong>${escapeHtml(job.id)}</strong>
+          <div class="chip-row">
+            <span class="chip ${job.status === "completed" ? "ok" : (job.status === "failed" ? "warn" : "alt")}">${escapeHtml(job.status)}</span>
+            <span class="chip">progress ${(Number(job.progress || 0) * 100).toFixed(0)}%</span>
+            <span class="chip">${escapeHtml(job.kind)}</span>
+          </div>
+          <div class="job-meta">${escapeHtml(job.message || "")}</div>
+          <div class="job-meta">episodes ${job.completed_episodes || 0} / ${job.episode_count || 0}</div>
+        </div>
+      `).join("");
+    }
+
+    function renderEpisodeLibrary() {
+      if (!state.episodes.length) {
+        dom.episodeLibrary.innerHTML = '<div class="empty">还没有保存的 episode。启动 train / test 后，这里会出现可回放记录。</div>';
+        return;
+      }
+      dom.episodeLibrary.innerHTML = state.episodes.map((episode) => `
+        <button class="list-row ${state.currentEpisodeId === episode.episode_id ? "active" : ""}" data-episode-id="${escapeHtml(episode.episode_id)}">
+          <strong>${escapeHtml(episode.episode_id)}</strong>
+          <div class="chip-row">
+            <span class="chip ${episode.kind === "train" ? "alt" : "ok"}">${escapeHtml(episode.kind || "--")}</span>
+            <span class="chip">seed ${escapeHtml(episode.seed || "--")}</span>
+            <span class="chip">completed ${escapeHtml(episode.completed_cargos || 0)}</span>
+          </div>
+          <div class="list-meta">${escapeHtml(episode.created_at || "")}</div>
+          <div class="list-meta">${escapeHtml(episode.controller_mode || "")}</div>
+        </button>
+      `).join("");
+      dom.episodeLibrary.querySelectorAll("[data-episode-id]").forEach((node) => {
+        node.addEventListener("click", () => loadEpisodeById(node.getAttribute("data-episode-id")));
+      });
+    }
+
+    function renderModelLibrary() {
+      if (!state.models.length) {
+        dom.modelLibrary.innerHTML = '<div class="empty">当前 models 目录没有可识别的模型组。</div>';
+        return;
+      }
+      dom.modelLibrary.innerHTML = state.models.map((model) => `
+        <div class="list-row ${dom.modelSelect.value === model.id ? "active" : ""}">
+          <strong>${escapeHtml(model.id)}</strong>
+          <div class="chip-row">
+            <span class="chip ${model.complete ? "ok" : "warn"}">${model.complete ? "complete" : "incomplete"}</span>
+            <span class="chip">vehicles ${escapeHtml(model.vehicle_ids.join(", "))}</span>
+          </div>
+          <div class="list-meta">${escapeHtml(model.updated_at || "")}</div>
+          <div class="list-meta">${Object.entries(model.paths || {}).map(([vehicleId, path]) => `V${vehicleId}: ${path}`).join(" | ")}</div>
+        </div>
+      `).join("");
+    }
+
+    function loadEpisodePayload(payload) {
+      state.episode = payload;
+      state.currentEpisodeId = payload?.summary?.episode_id || null;
+      state.currentIndex = 0;
+      const frames = currentFrames();
+      dom.timeSlider.max = String(Math.max(frames.length - 1, 0));
+      dom.timeSlider.value = "0";
+      renderFrame(0);
+      renderCharts();
+      renderEpisodeLibrary();
+    }
+
+    async function fetchJson(url, options = {}) {
+      const response = await fetch(url, {
+        headers: { "Content-Type": "application/json" },
+        ...options,
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || `Request failed: ${response.status}`);
+      }
+      return response.json();
+    }
+
+    function toggleControlAvailability(enabled) {
+      [dom.trainEpisodes, dom.trainSampleInterval, dom.modelSelect, dom.testEpisodes, dom.testSeed, dom.testSampleInterval, dom.testDuration].forEach((node) => {
+        node.disabled = !enabled;
+      });
+      document.getElementById("trainButton").disabled = !enabled;
+      document.getElementById("testButton").disabled = !enabled || !state.models.some((model) => model.complete);
+    }
+
+    async function refreshState(initial = false) {
+      renderJobs();
+      if (!state.hasApi) {
+        state.apiEnabled = false;
+        setStatus(state.embeddedMode ? "已载入嵌入式回放，未连接本地后端" : "当前为静态模板模式，请先启动本地服务", state.embeddedMode ? "ok" : "warn");
+        dom.workspaceHint.textContent = state.embeddedMode
+          ? "当前文件已经内嵌 episode 数据，可以离线回放。若要触发 train / test，请运行 `python -m ui.simulation_web`。"
+          : "请运行 `python -m ui.simulation_web`，然后通过 http://127.0.0.1:8000/simulation_report.html 打开页面。";
+        toggleControlAvailability(false);
+        renderEpisodeLibrary();
+        renderModelLibrary();
+        return;
+      }
+
+      try {
+        const payload = await fetchJson("/api/state");
+        state.apiEnabled = Boolean(payload.api_enabled);
+        state.jobs = payload.jobs || [];
+        state.models = payload.models || [];
+        state.episodes = payload.episodes || [];
+        toggleControlAvailability(state.apiEnabled);
+        populateModelSelect();
+        renderJobs();
+        renderEpisodeLibrary();
+        renderModelLibrary();
+        setStatus(state.apiEnabled ? "本地后端已连接，可直接发起 train / test" : "后端未启用", state.apiEnabled ? "ok" : "warn");
+        dom.workspaceHint.textContent = payload.workspace ? `工作区: ${payload.workspace}` : "工作区路径不可用";
+        if ((!state.episode || !currentFrames().length) && state.episodes.length) {
+          await loadEpisodeById(state.episodes[0].episode_id);
+        } else if (state.currentEpisodeId) {
+          renderEpisodeLibrary();
+        }
+      } catch (error) {
+        state.apiEnabled = false;
+        toggleControlAvailability(false);
+        renderJobs();
+        renderEpisodeLibrary();
+        renderModelLibrary();
+        setStatus(state.embeddedMode ? "已载入嵌入式回放，但本地 API 暂时不可用" : "无法连接本地后端，请运行 `python -m ui.simulation_web`", "warn");
+        if (!initial) console.error(error);
+      }
+    }
+
+    async function loadEpisodeById(episodeId) {
+      if (!episodeId || !state.hasApi) return;
+      stopPlayback();
+      const payload = await fetchJson(`/api/episodes/${encodeURIComponent(episodeId)}`);
+      loadEpisodePayload(payload);
+    }
+
+    function stopPlayback() {
+      if (state.timerId !== null) {
+        window.clearInterval(state.timerId);
+        state.timerId = null;
+      }
+      state.playing = false;
+      dom.playButton.textContent = "播放";
+    }
+
+    function startPlayback() {
+      stopPlayback();
+      const frames = currentFrames();
+      if (frames.length <= 1) return;
+      const speed = Number(dom.speedSelect.value || 1);
+      state.timerId = window.setInterval(() => {
+        if (state.currentIndex >= frames.length - 1) {
+          stopPlayback();
+          return;
+        }
+        renderFrame(state.currentIndex + 1);
+      }, Math.max(120, 700 / Math.max(speed, 0.1)));
+      state.playing = true;
+      dom.playButton.textContent = "暂停";
+    }
+
+    async function startTrain(event) {
+      event.preventDefault();
+      stopPlayback();
+      try {
+        const job = await fetchJson("/api/train", {
+          method: "POST",
+          body: JSON.stringify({
+            num_episodes: Number(dom.trainEpisodes.value || 5),
+            sample_interval: Number(dom.trainSampleInterval.value || 5),
+          }),
+        });
+        setStatus(`训练任务已创建: ${job.id}`, "ok");
+        await refreshState();
+      } catch (error) {
+        setStatus(`训练任务创建失败: ${error.message}`, "warn");
+      }
+    }
+
+    async function startTest(event) {
+      event.preventDefault();
+      stopPlayback();
+      try {
+        const job = await fetchJson("/api/test", {
+          method: "POST",
+          body: JSON.stringify({
+            model_id: dom.modelSelect.value,
+            num_episodes: Number(dom.testEpisodes.value || 1),
+            seed: Number(dom.testSeed.value || 42),
+            sample_interval: Number(dom.testSampleInterval.value || 5),
+            simulation_duration: Number(dom.testDuration.value || 28800),
+          }),
+        });
+        setStatus(`测试任务已创建: ${job.id}`, "ok");
+        await refreshState();
+      } catch (error) {
+        setStatus(`测试任务创建失败: ${error.message}`, "warn");
+      }
+    }
+
+    function bindEvents() {
+      dom.playButton.addEventListener("click", () => {
+        if (state.playing) {
+          stopPlayback();
+        } else {
+          startPlayback();
+        }
+      });
+      dom.timeSlider.addEventListener("input", (event) => {
+        stopPlayback();
+        renderFrame(Number(event.target.value));
+      });
+      dom.trainForm.addEventListener("submit", startTrain);
+      dom.testForm.addEventListener("submit", startTest);
+      dom.refreshButton.addEventListener("click", () => refreshState());
+    }
+
+    function initialRender() {
+      bindEvents();
+      if (state.episode) {
+        loadEpisodePayload(state.episode);
+        setStatus("已载入嵌入式回放", "ok");
+        dom.workspaceHint.textContent = "当前 HTML 包含 episode 数据，可直接离线回放；连接本地后端后还能切换模型和任务。";
+      } else {
+        renderFrame(0);
+        renderCharts();
+      }
+      refreshState(true);
+      if (state.hasApi) {
+        window.setInterval(() => refreshState(), 4000);
+      }
+    }
+
+    initialRender();
+  </script>
+</body>
+</html>

@@ -5,7 +5,8 @@
 
 import torch
 import numpy as np
-from typing import Tuple, List, Optional
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple
 import time
 import json
 from datetime import datetime
@@ -18,6 +19,7 @@ from heuristic_high_level import HeuristicHighLevelController
 from heuristic_controller import HeuristicLowLevelController
 from agent_low_level import LowLevelAgent, LowLevelController
 from custom_ppo_controller import CustomPPOController  # 自定义PPO控制器
+from simulation_capture import SimulationEpisodeRecorder, write_episode_artifacts
 
 
 def setup_logger(log_dir: str = "logs") -> logging.Logger:
@@ -72,11 +74,26 @@ def setup_logger(log_dir: str = "logs") -> logging.Logger:
 class TrainingManager:
     """训练管理器"""
 
-    def __init__(self, num_episodes: int = NUM_EPISODES, use_gpu: bool = False,
-                 enable_visualization: bool = False, vis_update_interval: int = 10,
-                 use_rl_low_level: bool = True, rl_model_path: str = None,
-                 use_custom_ppo: bool = True, use_heuristic_low_level: bool = False,
-                 logger: logging.Logger = None):
+    def __init__(
+        self,
+        num_episodes: int = NUM_EPISODES,
+        use_gpu: bool = False,
+        enable_visualization: bool = False,
+        vis_update_interval: int = 10,
+        use_rl_low_level: bool = True,
+        rl_model_path: str = None,
+        use_custom_ppo: bool = True,
+        use_heuristic_low_level: bool = False,
+        logger: logging.Logger = None,
+        model_output_dir: str = "models",
+        model_output_prefix: str = "rl_low_level",
+        save_final_models: bool = False,
+        stats_output_path: Optional[str] = None,
+        episode_artifact_dir: Optional[str] = None,
+        episode_sample_interval: float = 5.0,
+        run_label: str = "train",
+        on_episode_complete: Optional[Callable[[Dict[str, Any]], None]] = None,
+    ):
         """
         初始化训练管理器
 
@@ -89,6 +106,14 @@ class TrainingManager:
             rl_model_path: RL模型路径（用于加载已训练模型）
             use_custom_ppo: 是否使用自定义PPO（True）还是SB3的PPO（False）
             logger: 日志记录器实例
+            model_output_dir: 模型输出目录
+            model_output_prefix: 模型输出前缀，最终会加上 _best / _final
+            save_final_models: 训练结束后是否额外保存最终模型
+            stats_output_path: 统计信息输出路径
+            episode_artifact_dir: 每个 episode 的可回放产物输出目录
+            episode_sample_interval: 回放采样间隔
+            run_label: 运行标签
+            on_episode_complete: 每个 episode 完成后的回调
         """
         self.num_episodes = num_episodes
         self.device = 'cuda' if (use_gpu and torch.cuda.is_available()) else 'cpu'
@@ -97,7 +122,17 @@ class TrainingManager:
         self.use_rl_low_level = use_rl_low_level
         self.use_custom_ppo = use_custom_ppo
         self.use_heuristic_low_level = use_heuristic_low_level
+        self.rl_model_path = rl_model_path
         self.logger = logger if logger is not None else logging.getLogger("AGV_Training")
+        self.model_output_dir = model_output_dir
+        self.model_output_prefix = model_output_prefix
+        self.save_final_models = save_final_models
+        self.stats_output_path = stats_output_path
+        self.episode_artifact_dir = Path(episode_artifact_dir) if episode_artifact_dir else None
+        self.episode_sample_interval = max(float(episode_sample_interval), LOW_LEVEL_CONTROL_INTERVAL)
+        self.run_label = run_label
+        self.on_episode_complete = on_episode_complete
+        self._latest_episode_artifact = None
 
         # 初始化环境
         self.env = Environment()  # 训练环境：不固定seed
@@ -177,6 +212,7 @@ class TrainingManager:
         self.best_avg_reward = float('-inf')
         self.best_avg_completion = 0
         self.best_eval_reward = float('-inf')  # 最佳测试奖励
+        self.best_model_saved = False
         self.episode_actor_losses = []  # Actor loss追踪
         self.episode_critic_losses = []  # Critic loss追踪
         self.episode_entropies = []  # Entropy追踪
@@ -233,6 +269,52 @@ class TrainingManager:
             'avg_entropy': np.mean(entropies),
             'current_lr': current_lr
         }
+
+    def _controller_mode_label(self) -> str:
+        if self.use_rl_low_level:
+            return "custom_ppo" if self.use_custom_ppo else "sb3_ppo"
+        if self.use_heuristic_low_level:
+            return "heuristic_rules"
+        return "dqn"
+
+    def _write_episode_artifact(
+        self,
+        recorder: Optional[SimulationEpisodeRecorder],
+        episode_idx: int,
+        seed: Optional[int],
+        episode_reward: float,
+    ) -> Optional[Dict[str, Any]]:
+        self._latest_episode_artifact = None
+        if recorder is None or self.episode_artifact_dir is None:
+            return None
+
+        episode_id = f"{self.run_label}_ep{episode_idx + 1:04d}"
+        episode_dir = self.episode_artifact_dir / episode_id
+        metadata = {
+            "kind": "train",
+            "job_id": self.run_label,
+            "episode_id": episode_id,
+            "episode_index": episode_idx + 1,
+            "seed": seed,
+            "deterministic_inference": False,
+            "controller_mode": self._controller_mode_label(),
+            "run_label": self.run_label,
+            "model_mapping": {},
+            "source_model_path": self.rl_model_path,
+            "episode_reward": float(episode_reward),
+        }
+        payload = recorder.finalize(metadata)
+        artifact = write_episode_artifacts(episode_dir, payload)
+        artifact.update(
+            {
+                "episode_id": episode_id,
+                "episode_index": episode_idx + 1,
+                "seed": seed,
+                "episode_reward": float(episode_reward),
+            }
+        )
+        self._latest_episode_artifact = artifact
+        return artifact
 
     def evaluate(self, seed: int = None) -> Tuple[float, dict]:
         """评估当前模型性能
@@ -314,6 +396,10 @@ class TrainingManager:
              total_cargos, waiting_cargos, on_vehicle_cargos, train_stats)
         """
         obs = self.env.reset(seed=seed)
+        recorder = None
+        if self.episode_artifact_dir is not None:
+            recorder = SimulationEpisodeRecorder(self.env, sample_interval=self.episode_sample_interval)
+
         # 自定义PPO内部有跨episode缓存（用于密集奖励/特征），每回合必须重置，避免跨回合污染
         if self.use_rl_low_level and self.use_custom_ppo:
             self.low_level_controller.reset_episode()
@@ -364,7 +450,10 @@ class TrainingManager:
             # 更新可视化（如果启用）
             if self.enable_visualization and step_count % self.vis_update_interval == 0:
                 self.visualizer.update()
-            
+
+            if recorder is not None:
+                recorder.capture()
+
             if done:
                 break
         
@@ -417,6 +506,13 @@ class TrainingManager:
         # 启发式高层控制器不需要epsilon衰减
         # self.low_level_agent.decay_epsilon()  # 使用启发式控制，不需要探索
 
+        self._write_episode_artifact(
+            recorder=recorder,
+            episode_idx=episode_idx,
+            seed=seed,
+            episode_reward=episode_reward,
+        )
+
         return (episode_reward, completed_count, completed_timeout_count,
                 waiting_cargos_normal, waiting_cargos_timeout,
                 avg_wait_time, avg_completion_time,
@@ -445,7 +541,9 @@ class TrainingManager:
         self.logger.info("")
         
         start_time = time.time()
-        os.makedirs("models", exist_ok=True)
+        os.makedirs(self.model_output_dir, exist_ok=True)
+        if self.episode_artifact_dir is not None:
+            self.episode_artifact_dir.mkdir(parents=True, exist_ok=True)
         
         for episode in range(self.num_episodes):
             episode_start_time = time.time()
@@ -491,6 +589,26 @@ class TrainingManager:
                   f"完成: {avg_completion:6.2f}s | "
                   f"耗时: {episode_time:5.2f}s")
 
+            if self.on_episode_complete is not None:
+                self.on_episode_complete(
+                    {
+                        "episode_index": episode + 1,
+                        "num_episodes": self.num_episodes,
+                        "seed": train_seed,
+                        "episode_reward": float(episode_reward),
+                        "completed": int(completed),
+                        "completed_timeout": int(completed_timeout),
+                        "waiting_normal": int(waiting_normal),
+                        "waiting_timeout": int(waiting_timeout),
+                        "waiting_cargos": int(waiting_cargos),
+                        "on_vehicle_cargos": int(on_vehicle_cargos),
+                        "avg_wait_time": float(avg_wait),
+                        "avg_completion_time": float(avg_completion),
+                        "episode_time": float(episode_time),
+                        "artifact": self._latest_episode_artifact,
+                    }
+                )
+
             # 打印loss(仅在使用RL时)
             if train_stats and self.use_rl_low_level:
                 avg_loss = self.aggregate_loss(train_stats)
@@ -514,7 +632,11 @@ class TrainingManager:
 
                     # 保存最佳模型
                     if self.use_rl_low_level:
-                        self.low_level_controller.save_models("models", prefix="rl_low_level_best")
+                        self.low_level_controller.save_models(
+                            self.model_output_dir,
+                            prefix=f"{self.model_output_prefix}_best",
+                        )
+                        self.best_model_saved = True
 
                 # 保持原有的10个episode统计(基于训练奖励)
                 avg_reward = np.mean(self.episode_rewards[-10:])
@@ -535,6 +657,17 @@ class TrainingManager:
                 self.logger.info("")
             
         total_time = time.time() - start_time
+        if self.use_rl_low_level and not self.best_model_saved:
+            self.low_level_controller.save_models(
+                self.model_output_dir,
+                prefix=f"{self.model_output_prefix}_best",
+            )
+            self.best_model_saved = True
+        if self.use_rl_low_level and self.save_final_models:
+            self.low_level_controller.save_models(
+                self.model_output_dir,
+                prefix=f"{self.model_output_prefix}_final",
+            )
         self.logger.info("=" * 80)
         self.logger.info("评估完成")
         self.logger.info("=" * 80)
@@ -589,7 +722,12 @@ class TrainingManager:
     def _save_stats(self):
         """保存评估统计数据"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        stats_path = f"heuristic_evaluation_stats_{timestamp}.json"
+        if self.stats_output_path:
+            stats_path = self.stats_output_path
+            stats_parent = Path(stats_path).parent
+            stats_parent.mkdir(parents=True, exist_ok=True)
+        else:
+            stats_path = f"heuristic_evaluation_stats_{timestamp}.json"
 
         # 记录真实的底层控制模式，避免后续分析被“写死字段”误导
         if self.use_rl_low_level:
@@ -622,6 +760,9 @@ class TrainingManager:
                 'control_interval': LOW_LEVEL_CONTROL_INTERVAL,
                 'high_level_control': 'heuristic_nearest_distance',
                 'low_level_control': low_level_control,
+                'run_label': self.run_label,
+                'model_output_dir': self.model_output_dir,
+                'model_output_prefix': self.model_output_prefix,
             }
         }
         

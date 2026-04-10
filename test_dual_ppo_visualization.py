@@ -9,10 +9,12 @@ from unittest.mock import Mock, patch
 import torch
 
 from custom_ppo_controller import CustomPPOController, MAX_VEHICLES
-from environment import Environment
-from html_visualization import write_simulation_report
+from environment import Cargo, Environment
+from ui.html_visualization import write_simulation_report
 from ppo_agent import PPOAgent
 from run_dual_ppo_visualization import DualPPOVisualizationRunner
+from simulation_capture import build_frame
+from ui.simulation_web import discover_model_sets
 
 
 class TestCustomPPOControllerModelPaths(unittest.TestCase):
@@ -73,18 +75,38 @@ class TestHtmlVisualization(unittest.TestCase):
         frames = [
             {
                 "time": 0.0,
+                "system": {"completed_cargos": 0, "timed_out_cargos": 0, "avg_wait_time": 0.0, "current_cargos": 1},
                 "vehicles": [
-                    {"id": 0, "position": 0.0, "velocity": 0.0, "slot_count": 0, "is_loading_unloading": False},
-                    {"id": 1, "position": 50.0, "velocity": 0.0, "slot_count": 1, "is_loading_unloading": True},
+                    {
+                        "id": 0,
+                        "position": 0.0,
+                        "velocity": 0.0,
+                        "slot_count": 0,
+                        "is_loading_unloading": False,
+                        "slots": [],
+                        "operation": {"mode": "ready", "label": "Ready"},
+                        "status_text": "Ready",
+                    },
+                    {
+                        "id": 1,
+                        "position": 50.0,
+                        "velocity": 0.0,
+                        "slot_count": 1,
+                        "is_loading_unloading": True,
+                        "slots": [],
+                        "operation": {"mode": "loading", "label": "Loading C1", "remaining_time": 5.0},
+                        "status_text": "Loading C1",
+                    },
                 ],
-                "loading_stations": [{"id": 0, "occupied_slots": 1}, {"id": 1, "occupied_slots": 0}],
-                "completed_cargos": 0,
-                "timed_out_cargos": 0,
-                "active_cargos": 1,
+                "loading_stations": [{"id": 0, "position": 20.0, "occupied_slots": 1, "slots": []}, {"id": 1, "position": 60.0, "occupied_slots": 0, "slots": []}],
+                "unloading_stations": [{"id": 0, "position": 30.0, "description": "Unlimited receiving"}],
+                "waiting_cargos": [],
+                "active_cargos": [],
+                "recent_completed_cargos": [],
                 "recent_alerts": [{"time": 0.0, "level": "warning", "vehicle_ids": [0, 1], "distance": 1.0}],
             }
         ]
-        summary = {"completed_cargos": 0, "timed_out_cargos": 0}
+        summary = {"completed_cargos": 0, "timed_out_cargos": 0, "kind": "test"}
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "simulation_report.html"
@@ -92,12 +114,68 @@ class TestHtmlVisualization(unittest.TestCase):
 
             contents = output_path.read_text(encoding="utf-8")
 
-        self.assertIn("Play", contents)
+        self.assertIn("训练任务", contents)
         self.assertIn("timeSlider", contents)
-        self.assertIn("FRAME_DATA", contents)
-        self.assertIn("summaryMetrics", contents)
-        self.assertIn("Recent Alerts", contents)
-        self.assertIn("recentAlerts", contents)
+        self.assertIn("window.__SIMULATION_BOOTSTRAP__", contents)
+        self.assertIn("Episode Library", contents)
+        self.assertIn("最近告警", contents)
+
+
+class TestSimulationCapture(unittest.TestCase):
+    def test_build_frame_contains_visualizer_fields(self):
+        env = Environment(seed=42)
+        cargo = Cargo(
+            id=0,
+            arrival_time=0.0,
+            loading_station=0,
+            loading_slot=0,
+            allowed_unloading_stations={0, 2},
+            assigned_vehicle=0,
+            assigned_vehicle_slot=0,
+        )
+        env.cargos[cargo.id] = cargo
+        env.loading_stations[0].slots[0] = cargo.id
+        env.completed_cargo_list.append(
+            {
+                "id": 99,
+                "arrival_time": 0.0,
+                "completion_time": 20.0,
+                "wait_time": 12.0,
+                "loading_station": 0,
+                "unloading_station": 2,
+                "vehicle_id": 1,
+            }
+        )
+
+        frame = build_frame(env)
+
+        self.assertIn("system", frame)
+        self.assertIn("vehicles", frame)
+        self.assertIn("loading_stations", frame)
+        self.assertIn("recent_completed_cargos", frame)
+        self.assertIn("waiting_cargos", frame)
+        self.assertIn("active_cargos", frame)
+        self.assertIn("operation", frame["vehicles"][0])
+        self.assertIn("slots", frame["vehicles"][0])
+        self.assertEqual(frame["loading_stations"][0]["slots"][0]["assigned_vehicle"], 0)
+        self.assertEqual(frame["waiting_cargos"][0]["destination_text"], "(OP0, OP2)")
+
+
+class TestModelDiscovery(unittest.TestCase):
+    def test_discover_model_sets_groups_complete_pairs(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "alpha_v0.pth").write_text("x", encoding="utf-8")
+            (root / "alpha_v1.pth").write_text("x", encoding="utf-8")
+            (root / "beta_v0.pth").write_text("x", encoding="utf-8")
+
+            discovered = discover_model_sets(root)
+
+        alpha = next(item for item in discovered if item["id"] == "alpha")
+        beta = next(item for item in discovered if item["id"] == "beta")
+        self.assertTrue(alpha["complete"])
+        self.assertFalse(beta["complete"])
+        self.assertEqual(sorted(alpha["vehicle_ids"]), [0, 1])
 
 
 class TestDualPPOVisualizationRunner(unittest.TestCase):
@@ -149,7 +227,7 @@ class TestDualPPOVisualizationRunner(unittest.TestCase):
         self.assertEqual(summary["simulation_control_interval"], 0.5)
         self.assertEqual(summary["high_level_decision_interval"], 1.0)
         self.assertEqual(summary["model_mapping"], {str(k): v for k, v in model_paths.items()})
-        self.assertGreater(len(result["statistics"]["time"]), len(result["frames"]))
+        self.assertGreaterEqual(len(result["statistics"]["time"]), len(result["frames"]))
         self.assertIn("safety_warning_count", summary)
         self.assertIn("collision_alert_count", summary)
         self.assertIn("alerts", summary)
