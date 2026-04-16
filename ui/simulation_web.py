@@ -13,8 +13,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import unquote, urlparse
 
-import torch
-
 if __package__ in (None, ""):
     import sys
 
@@ -23,8 +21,12 @@ if __package__ in (None, ""):
         sys.path.insert(0, str(workspace_root))
 
 from config import EPISODE_DURATION, MAX_VEHICLES
-from run_dual_ppo_visualization import DualPPOVisualizationRunner
-from train import TrainingManager, setup_logger
+from ui.dashboard_metadata import (
+    config_snapshot_summary,
+    enrich_episode_payload,
+    summarize_episode_record,
+    summarize_job_record,
+)
 
 
 MODEL_SET_PATTERN = re.compile(r"(?P<prefix>.+)_v(?P<vehicle_id>\d+)\.pth$")
@@ -32,6 +34,14 @@ MODEL_SET_PATTERN = re.compile(r"(?P<prefix>.+)_v(?P<vehicle_id>\d+)\.pth$")
 
 def _now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+def _torch_cuda_available() -> bool:
+    try:
+        import torch
+    except ModuleNotFoundError:
+        return False
+    return bool(torch.cuda.is_available())
 
 
 def _json_response(handler: BaseHTTPRequestHandler, status: int, payload: Dict[str, Any]) -> None:
@@ -67,12 +77,14 @@ def discover_model_sets(models_dir: Path) -> List[Dict[str, Any]]:
                 "label": prefix,
                 "directory": "." if str(relative_parent) == "." else relative_parent.as_posix(),
                 "paths": {},
+                "display_paths": {},
                 "vehicle_ids": [],
                 "updated_at": None,
                 "complete": False,
             },
         )
         group["paths"][str(vehicle_id)] = str(model_path.resolve())
+        group["display_paths"][str(vehicle_id)] = str(model_path.relative_to(models_dir).as_posix())
         group["vehicle_ids"].append(vehicle_id)
         file_mtime = datetime.fromtimestamp(model_path.stat().st_mtime).isoformat(timespec="seconds")
         if group["updated_at"] is None or file_mtime > group["updated_at"]:
@@ -92,10 +104,11 @@ def discover_model_sets(models_dir: Path) -> List[Dict[str, Any]]:
     return discovered
 
 
-def discover_saved_episodes(runs_dir: Path) -> List[Dict[str, Any]]:
+def discover_saved_episodes(runs_dir: Path, workspace: Optional[Path] = None) -> List[Dict[str, Any]]:
     runs_dir = Path(runs_dir)
     if not runs_dir.exists():
         return []
+    workspace = Path(workspace or runs_dir).resolve()
 
     episodes: List[Dict[str, Any]] = []
     for summary_path in runs_dir.rglob("summary.json"):
@@ -107,28 +120,12 @@ def discover_saved_episodes(runs_dir: Path) -> List[Dict[str, Any]]:
         except json.JSONDecodeError:
             continue
         episode_dir = summary_path.parent
-        episode_id = summary.get("episode_id") or episode_dir.name
-        created_at = summary.get("created_at") or datetime.fromtimestamp(
-            summary_path.stat().st_mtime
-        ).isoformat(timespec="seconds")
-        episodes.append(
-            {
-                "episode_id": episode_id,
-                "kind": summary.get("kind"),
-                "job_id": summary.get("job_id"),
-                "episode_index": summary.get("episode_index"),
-                "seed": summary.get("seed"),
-                "completed_cargos": summary.get("completed_cargos"),
-                "timed_out_cargos": summary.get("timed_out_cargos"),
-                "average_wait_time": summary.get("average_wait_time"),
-                "average_completion_time": summary.get("average_completion_time"),
-                "controller_mode": summary.get("controller_mode"),
-                "model_mapping": summary.get("model_mapping", {}),
-                "created_at": created_at,
-                "report_path": str((episode_dir / "simulation_report.html").resolve()),
-                "episode_path": str(episode_path.resolve()),
-            }
-        )
+        episode_summary = summarize_episode_record(summary, episode_dir, workspace)
+        if not episode_summary.get("created_at"):
+            episode_summary["created_at"] = datetime.fromtimestamp(
+                summary_path.stat().st_mtime
+            ).isoformat(timespec="seconds")
+        episodes.append(episode_summary)
 
     episodes.sort(key=lambda item: (item["created_at"], item["episode_id"]), reverse=True)
     return episodes
@@ -148,7 +145,7 @@ class SimulationWebApp:
 
     def list_jobs(self) -> List[Dict[str, Any]]:
         with self.lock:
-            jobs = [dict(job) for job in self.jobs.values()]
+            jobs = [summarize_job_record(job, self.workspace) for job in self.jobs.values()]
         jobs.sort(key=lambda item: item["created_at"], reverse=True)
         return jobs
 
@@ -158,7 +155,8 @@ class SimulationWebApp:
             "workspace": str(self.workspace),
             "jobs": self.list_jobs(),
             "models": discover_model_sets(self.models_dir),
-            "episodes": discover_saved_episodes(self.runs_dir),
+            "episodes": discover_saved_episodes(self.runs_dir, self.workspace),
+            "config_snapshot": config_snapshot_summary(),
             "server_time": _now_iso(),
         }
 
@@ -166,7 +164,13 @@ class SimulationWebApp:
         for episode_path in self.runs_dir.rglob("episode.json"):
             if episode_path.parent.name != episode_id:
                 continue
-            return json.loads(episode_path.read_text(encoding="utf-8"))
+            payload = json.loads(episode_path.read_text(encoding="utf-8"))
+            return enrich_episode_payload(
+                payload,
+                workspace=self.workspace,
+                episode_dir=episode_path.parent,
+                report_path=episode_path.parent / "simulation_report.html",
+            )
         raise FileNotFoundError(f"Episode not found: {episode_id}")
 
     def resolve_model_set(self, model_id: str) -> Dict[str, Any]:
@@ -209,16 +213,24 @@ class SimulationWebApp:
     def start_train_job(self, config: Dict[str, Any]) -> Dict[str, Any]:
         num_episodes = max(1, int(config.get("num_episodes", 5)))
         sample_interval = max(float(config.get("sample_interval", 5.0)), 0.5)
+        use_gpu = _torch_cuda_available()
         job = self._create_job(
             "train",
             {
                 "num_episodes": num_episodes,
                 "sample_interval": sample_interval,
+                "episode_duration": EPISODE_DURATION,
+                "device": "cuda" if use_gpu else "cpu",
+                "controller_mode": "heuristic_high_level + custom_ppo_low_level",
+                "use_rl_low_level": True,
+                "use_custom_ppo": True,
+                "save_final_models": True,
+                "data_source": "seeded_simulation",
             },
         )
         thread = threading.Thread(
             target=self._run_train_job,
-            args=(job["id"], num_episodes, sample_interval),
+            args=(job["id"], num_episodes, sample_interval, use_gpu),
             daemon=True,
         )
         thread.start()
@@ -242,6 +254,9 @@ class SimulationWebApp:
                 "sample_interval": sample_interval,
                 "seed": base_seed,
                 "simulation_duration": simulation_duration,
+                "deterministic_inference": True,
+                "controller_mode": "heuristic_high_level + custom_ppo_low_level",
+                "data_source": "seeded_simulation",
             },
         )
         thread = threading.Thread(
@@ -252,7 +267,9 @@ class SimulationWebApp:
         thread.start()
         return job
 
-    def _run_train_job(self, job_id: str, num_episodes: int, sample_interval: float) -> None:
+    def _run_train_job(self, job_id: str, num_episodes: int, sample_interval: float, use_gpu: bool) -> None:
+        from train import TrainingManager, setup_logger
+
         job_dir = self._job_dir(job_id)
         episodes_dir = job_dir / "episodes"
         logger = setup_logger(str(job_dir / "logs"))
@@ -276,7 +293,7 @@ class SimulationWebApp:
         try:
             manager = TrainingManager(
                 num_episodes=num_episodes,
-                use_gpu=torch.cuda.is_available(),
+                use_gpu=use_gpu,
                 enable_visualization=False,
                 use_rl_low_level=True,
                 use_custom_ppo=True,
@@ -298,6 +315,7 @@ class SimulationWebApp:
                 progress=1.0,
                 completed_episodes=num_episodes,
                 generated_model_sets=[f"{job_id}_best", f"{job_id}_final"],
+                training_stats_path=str((job_dir / "training_stats.json").resolve()),
                 message="Training finished",
             )
         except Exception as exc:
@@ -330,6 +348,8 @@ class SimulationWebApp:
         )
 
         try:
+            from run_dual_ppo_visualization import DualPPOVisualizationRunner
+
             for episode_index in range(num_episodes):
                 seed = base_seed + episode_index
                 episode_id = f"{job_id}_ep{episode_index + 1:04d}"
@@ -363,6 +383,7 @@ class SimulationWebApp:
                 finished_at=_now_iso(),
                 progress=1.0,
                 generated_model_sets=[model_set["id"]],
+                training_stats_path=None,
                 message="Test finished",
             )
         except Exception as exc:

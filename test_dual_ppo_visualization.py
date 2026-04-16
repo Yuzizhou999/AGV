@@ -6,17 +6,33 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-import torch
+from config import MAX_VEHICLES as CONFIG_MAX_VEHICLES
 
-from custom_ppo_controller import CustomPPOController, MAX_VEHICLES
+try:
+    import torch
+
+    TORCH_AVAILABLE = True
+except ModuleNotFoundError:
+    torch = None
+    TORCH_AVAILABLE = False
+
 from environment import Cargo, Environment
 from ui.html_visualization import write_simulation_report
-from ppo_agent import PPOAgent
-from run_dual_ppo_visualization import DualPPOVisualizationRunner
 from simulation_capture import build_frame
-from ui.simulation_web import discover_model_sets
+from ui.simulation_web import SimulationWebApp, discover_model_sets, discover_saved_episodes
+
+if TORCH_AVAILABLE:
+    from custom_ppo_controller import CustomPPOController, MAX_VEHICLES
+    from ppo_agent import PPOAgent
+    from run_dual_ppo_visualization import DualPPOVisualizationRunner
+else:
+    CustomPPOController = None
+    PPOAgent = None
+    DualPPOVisualizationRunner = None
+    MAX_VEHICLES = CONFIG_MAX_VEHICLES
 
 
+@unittest.skipUnless(TORCH_AVAILABLE, "torch is required for PPO controller tests")
 class TestCustomPPOControllerModelPaths(unittest.TestCase):
     def test_model_paths_load_exact_requested_file_per_vehicle(self):
         env = SimpleNamespace(vehicles={})
@@ -45,6 +61,7 @@ class TestCustomPPOControllerModelPaths(unittest.TestCase):
             self.assertEqual(controller.agents[vehicle_id].load.call_count, 0)
 
 
+@unittest.skipUnless(TORCH_AVAILABLE, "torch is required for checkpoint loading tests")
 class TestPPOAgentCheckpointLoading(unittest.TestCase):
     def test_load_supports_saved_checkpoint_on_current_torch(self):
         agent = PPOAgent(obs_dim=15, action_dim=1, device="cpu", total_episodes=1)
@@ -119,6 +136,9 @@ class TestHtmlVisualization(unittest.TestCase):
         self.assertIn("window.__SIMULATION_BOOTSTRAP__", contents)
         self.assertIn("Episode Library", contents)
         self.assertIn("最近告警", contents)
+        self.assertIn("AGV Simulation Workbench", contents)
+        self.assertIn("算法信息与数据来源", contents)
+        self.assertIn("上料口带区", contents)
 
 
 class TestSimulationCapture(unittest.TestCase):
@@ -178,6 +198,101 @@ class TestModelDiscovery(unittest.TestCase):
         self.assertEqual(sorted(alpha["vehicle_ids"]), [0, 1])
 
 
+class TestEpisodeDiscoveryAndMetadata(unittest.TestCase):
+    def test_discover_saved_episodes_includes_provenance_fields(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            workspace = Path(tmpdir)
+            episode_dir = workspace / "outputs" / "web_runs" / "train_demo" / "episodes" / "train_demo_ep0001"
+            episode_dir.mkdir(parents=True)
+            (episode_dir / "episode.json").write_text(
+                json.dumps({"frames": [], "summary": {"episode_id": "train_demo_ep0001"}, "statistics": {}}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            (episode_dir / "summary.json").write_text(
+                json.dumps(
+                    {
+                        "kind": "train",
+                        "job_id": "train_demo",
+                        "episode_id": "train_demo_ep0001",
+                        "episode_index": 1,
+                        "seed": 7,
+                        "controller_mode": "custom_ppo",
+                        "selected_model_id": "train_demo_best",
+                        "source_model_path": str(workspace / "models" / "warm_start_v0.pth"),
+                        "created_at": "2026-04-16T09:30:00",
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (episode_dir / "simulation_report.html").write_text("<html></html>", encoding="utf-8")
+            (workspace / "outputs" / "web_runs" / "train_demo" / "training_stats.json").write_text(
+                json.dumps(
+                    {
+                        "episode_rewards": [1.0, 2.0],
+                        "episode_completions": [3, 4],
+                        "episode_actor_losses": [0.2, 0.1],
+                        "episode_critic_losses": [0.3, 0.2],
+                        "episode_entropies": [0.4, 0.3],
+                        "best_avg_reward": 1.8,
+                        "best_avg_completion": 3.5,
+                        "best_eval_reward": 2.1,
+                        "config": {"low_level_control": "custom_ppo", "run_label": "train_demo"},
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            discovered = discover_saved_episodes(workspace / "outputs" / "web_runs", workspace)
+
+        self.assertEqual(len(discovered), 1)
+        self.assertEqual(discovered[0]["selected_model_id"], "train_demo_best")
+        self.assertTrue(discovered[0]["training_stats_available"])
+        self.assertTrue(discovered[0]["training_stats_path"].endswith("training_stats.json"))
+        self.assertEqual(discovered[0]["data_source_label"], "Seeded simulation")
+
+    def test_simulation_web_app_load_episode_enriches_metadata(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            workspace = Path(tmpdir)
+            episode_dir = workspace / "outputs" / "web_runs" / "test_demo" / "episodes" / "test_demo_ep0001"
+            episode_dir.mkdir(parents=True)
+            (episode_dir / "episode.json").write_text(
+                json.dumps(
+                    {
+                        "frames": [{"time": 0.0, "system": {}, "vehicles": [], "loading_stations": [], "unloading_stations": [], "waiting_cargos": [], "active_cargos": [], "recent_completed_cargos": [], "recent_alerts": []}],
+                        "summary": {
+                            "kind": "test",
+                            "job_id": "test_demo",
+                            "episode_id": "test_demo_ep0001",
+                            "episode_index": 1,
+                            "seed": 42,
+                            "selected_model_id": "demo_model",
+                            "model_mapping": {"0": str(workspace / "models" / "demo_model_v0.pth")},
+                            "deterministic_inference": True,
+                        },
+                        "statistics": {},
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (episode_dir / "summary.json").write_text(
+                json.dumps({"episode_id": "test_demo_ep0001", "kind": "test"}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            app = SimulationWebApp(workspace)
+
+            payload = app.load_episode("test_demo_ep0001")
+
+        self.assertIn("metadata", payload)
+        self.assertEqual(payload["metadata"]["selected_model_id"], "demo_model")
+        self.assertEqual(payload["metadata"]["data_provenance"]["kind"], "seeded_simulation")
+        self.assertIn("config_snapshot", payload["metadata"])
+        self.assertIn("source_file", payload["metadata"]["config_snapshot"])
+
+
+@unittest.skipUnless(TORCH_AVAILABLE, "torch is required for runner tests")
 class TestDualPPOVisualizationRunner(unittest.TestCase):
     def test_runner_exports_metadata_and_uses_deterministic_actions(self):
         controllers = []

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AGV Simulation Workbench</title>
+  <title>AGV Track Workbench</title>
   <style>
     :root {
       --bg: #ebe6dc;
@@ -277,6 +277,38 @@
       color: var(--muted);
     }
 
+    .mono.wrap,
+    .list-meta.wrap,
+    .job-meta.wrap {
+      white-space: normal;
+      word-break: break-word;
+    }
+
+    .job-error {
+      border-top: 1px dashed rgba(31, 44, 50, 0.14);
+      padding-top: 8px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .job-error summary {
+      cursor: pointer;
+      color: var(--warn);
+      font-weight: 700;
+    }
+
+    .job-error pre {
+      margin: 8px 0 0;
+      padding: 10px;
+      border-radius: 12px;
+      background: rgba(31, 44, 50, 0.06);
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font: 12px/1.45 var(--font-mono);
+      color: var(--ink);
+    }
+
     .workspace {
       display: grid;
       grid-template-columns: minmax(0, 1.3fr) minmax(360px, 0.9fr);
@@ -347,15 +379,15 @@
       overflow: hidden;
       border: 1px solid rgba(31, 44, 50, 0.1);
       background:
-        radial-gradient(circle at 50% 50%, rgba(255, 252, 247, 1) 0%, rgba(239, 231, 213, 1) 58%, rgba(230, 220, 198, 1) 100%);
-      min-height: 620px;
+        radial-gradient(circle at 50% 50%, rgba(255, 252, 247, 1) 0%, rgba(239, 231, 213, 1) 52%, rgba(230, 220, 198, 1) 100%);
+      min-height: 520px;
     }
 
     svg.track {
       width: 100%;
       height: 100%;
       display: block;
-      min-height: 620px;
+      min-height: 520px;
     }
 
     .legend {
@@ -386,6 +418,10 @@
     .legend .l-loading::before { background: var(--load); }
     .legend .l-unloading::before { background: var(--unload); }
     .legend .l-busy::before { background: var(--warn); }
+
+    .track-note {
+      margin-top: -2px;
+    }
 
     .chart-grid {
       display: grid;
@@ -499,6 +535,16 @@
       background: rgba(27, 106, 115, 0.08);
       padding: 1px 6px;
       border-radius: 999px;
+    }
+
+    .kv.tight {
+      gap: 2px;
+    }
+
+    .detail-note {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
     }
 
     .chip-row {
@@ -644,9 +690,9 @@
     <section class="topbar">
       <div class="brand">
         <p class="eyebrow">AGV Replay / Train / Test</p>
-        <h1 class="headline">Circular Track Simulation Workbench</h1>
+        <h1 class="headline">AGV Simulation Workbench</h1>
         <p class="subline">
-          统一查看训练、测试与离线回放。页面会展示 `visualizer.py` 中的轨道视图、车辆状态、上下料站细节、货物字段、告警和历史统计，并在本地服务模式下直接调用 train / test。
+          统一查看训练、测试与离线回放。轨道上只显示小车；所有上料口固定在轨道上方，下料口固定在轨道下方，同时补齐算法参数、模型选择与数据来源说明。
         </p>
       </div>
       <aside class="status-board">
@@ -671,7 +717,7 @@
           </div>
           <div class="field full">
             <label>说明</label>
-            <div class="empty">训练 episode 时长仍使用 [config.py](/E:/Desktop/coding/gitclone/Work/AGV/config.py) 中的 `EPISODE_DURATION`。页面仅负责触发任务、管理模型和保存可回放产物。</div>
+            <div class="empty">训练 episode 时长仍使用当前工作区 `config.py` 中的 `EPISODE_DURATION`。页面仅负责触发任务、管理模型和展示运行产物，不新增后端未支持的训练输入项。</div>
           </div>
         </div>
         <div class="command-actions">
@@ -743,16 +789,17 @@
         </div>
 
         <div class="track-wrap">
-          <svg id="trackCanvas" class="track" viewBox="-120 -120 240 240" aria-label="AGV circular track"></svg>
+          <svg id="trackCanvas" class="track" viewBox="0 0 1240 540" aria-label="轨道视图"></svg>
         </div>
 
         <div class="legend">
-          <span class="l-vehicle0">Vehicle 0</span>
-          <span class="l-vehicle1">Vehicle 1</span>
-          <span class="l-loading">Loading station</span>
-          <span class="l-unloading">Unloading station</span>
-          <span class="l-busy">装卸中</span>
+          <span class="l-vehicle0">车辆 0</span>
+          <span class="l-vehicle1">车辆 1</span>
+          <span class="l-loading">上料口锚点</span>
+          <span class="l-unloading">下料口锚点</span>
+          <span class="l-busy">装卸中车辆</span>
         </div>
+        <div class="panel-copy track-note">轨道层只显示小车；站点改为上下分层锚点，详细工位和货物信息保留在右侧列表。</div>
 
         <section class="chart-grid">
           <div class="chart-card">
@@ -820,7 +867,7 @@
         </section>
 
         <section class="rail-panel">
-          <h2 class="panel-title">回放元数据</h2>
+          <h2 class="panel-title">算法信息与数据来源</h2>
           <div class="data-list" id="summaryList"></div>
         </section>
       </aside>
@@ -851,6 +898,7 @@
       jobs: [],
       models: [],
       episodes: [],
+      configSnapshot: null,
       currentEpisodeId: null,
       currentIndex: 0,
       playing: false,
@@ -942,6 +990,14 @@
       return state.episode?.statistics || {};
     }
 
+    function currentMetadata() {
+      return state.episode?.metadata || {};
+    }
+
+    function currentConfigSnapshot() {
+      return currentMetadata().config_snapshot || state.configSnapshot || null;
+    }
+
     function currentFrame(index = state.currentIndex) {
       const frames = currentFrames();
       if (!frames.length) {
@@ -981,111 +1037,312 @@
       return Number(currentSummary().track_length || 100);
     }
 
-    function toPoint(position, radius = 82) {
-      const angle = (-2 * Math.PI * Number(position || 0) / trackLength()) + Math.PI / 2;
+    function normalizePosition(position) {
+      const length = trackLength();
+      if (!length) return 0;
+      let normalized = Number(position || 0) % length;
+      if (normalized < 0) normalized += length;
+      return normalized;
+    }
+
+    function buildTrackGeometry() {
+      const width = 1240;
+      const height = 540;
+      const leftX = 170;
+      const rightX = 1070;
+      const centerX = (leftX + rightX) / 2;
+      const radius = 110;
+      const centerY = 270;
+      const topY = centerY - radius;
+      const bottomY = centerY + radius;
+      const straightLength = rightX - leftX;
+      const halfStraight = straightLength / 2;
       return {
-        x: radius * Math.cos(angle),
-        y: radius * Math.sin(angle),
-        angle,
+        width,
+        height,
+        leftX,
+        rightX,
+        centerX,
+        centerY,
+        radius,
+        topY,
+        bottomY,
+        straightLength,
+        halfStraight,
+        perimeter: (straightLength * 2) + (Math.PI * radius * 2),
+        loadingY: 84,
+        unloadingY: 456,
+        loadingTitleY: 48,
+        unloadingTitleY: 506,
+      };
+    }
+
+    function stationStatusText(station, kind) {
+      if (kind === "loading") {
+        const totalSlots = station.slots?.length ?? 0;
+        return `${station.occupied_slots ?? 0}/${totalSlots} busy`;
+      }
+      return station.description || "Ready";
+    }
+
+    function trackPath(geometry) {
+      return [
+        `M ${geometry.leftX} ${geometry.topY}`,
+        `H ${geometry.rightX}`,
+        `A ${geometry.radius} ${geometry.radius} 0 0 1 ${geometry.rightX} ${geometry.bottomY}`,
+        `H ${geometry.leftX}`,
+        `A ${geometry.radius} ${geometry.radius} 0 0 1 ${geometry.leftX} ${geometry.topY}`,
+      ].join(" ");
+    }
+
+    function positionToTrackPoint(position, geometry = buildTrackGeometry()) {
+      const length = trackLength();
+      const distance = length > 0
+        ? (normalizePosition(position) / length) * geometry.perimeter
+        : 0;
+      const firstStraight = geometry.halfStraight;
+      const firstArcEnd = firstStraight + (Math.PI * geometry.radius);
+      const bottomStraightEnd = firstArcEnd + geometry.straightLength;
+      const secondArcEnd = bottomStraightEnd + (Math.PI * geometry.radius);
+
+      if (distance <= firstStraight) {
+        return { x: geometry.centerX + distance, y: geometry.topY, angleDeg: 0 };
+      }
+      if (distance <= firstArcEnd) {
+        const arcDistance = distance - firstStraight;
+        const theta = (-Math.PI / 2) + (arcDistance / geometry.radius);
+        return {
+          x: geometry.rightX + (geometry.radius * Math.cos(theta)),
+          y: geometry.centerY + (geometry.radius * Math.sin(theta)),
+          angleDeg: ((theta + (Math.PI / 2)) * 180) / Math.PI,
+        };
+      }
+      if (distance <= bottomStraightEnd) {
+        const bottomDistance = distance - firstArcEnd;
+        return { x: geometry.rightX - bottomDistance, y: geometry.bottomY, angleDeg: 180 };
+      }
+      if (distance <= secondArcEnd) {
+        const arcDistance = distance - bottomStraightEnd;
+        const theta = (Math.PI / 2) + (arcDistance / geometry.radius);
+        return {
+          x: geometry.leftX + (geometry.radius * Math.cos(theta)),
+          y: geometry.centerY + (geometry.radius * Math.sin(theta)),
+          angleDeg: ((theta + (Math.PI / 2)) * 180) / Math.PI,
+        };
+      }
+      const lastDistance = distance - secondArcEnd;
+      return { x: geometry.leftX + lastDistance, y: geometry.topY, angleDeg: 0 };
+    }
+
+    function positionToStationAnchor(position, band, geometry = buildTrackGeometry()) {
+      const length = trackLength();
+      const ratio = length > 0 ? normalizePosition(position) / length : 0;
+      const x = geometry.leftX + (ratio * geometry.straightLength);
+      return {
+        x,
+        y: band === "loading" ? geometry.loadingY : geometry.unloadingY,
       };
     }
 
     function renderTrack(frame) {
       const svg = dom.trackCanvas;
+      const geometry = buildTrackGeometry();
       svg.innerHTML = "";
+      svg.setAttribute("viewBox", `0 0 ${geometry.width} ${geometry.height}`);
 
-      svg.appendChild(createSvg("circle", { cx: 0, cy: 0, r: 82, fill: "none", stroke: "#b5964b", "stroke-width": 7 }));
-      svg.appendChild(createSvg("circle", {
-        cx: 0,
-        cy: 0,
-        r: 70,
+      const primaryPath = trackPath(geometry);
+      const bandLabel = (text, x, y, fill) => {
+        const node = createSvg("text", {
+          x,
+          y,
+          fill,
+          "font-size": 12,
+          "font-family": "Bahnschrift, Segoe UI, sans-serif",
+          "font-weight": 700,
+          "letter-spacing": 0.8,
+        });
+        node.textContent = text;
+        return node;
+      };
+
+      svg.appendChild(createSvg("path", {
+        d: primaryPath,
         fill: "none",
-        stroke: "rgba(31, 44, 50, 0.18)",
-        "stroke-width": 1.5,
-        "stroke-dasharray": "4 6",
+        stroke: "#b5964b",
+        "stroke-width": 64,
+        "stroke-linecap": "round",
+        "stroke-linejoin": "round",
+      }));
+      svg.appendChild(createSvg("path", {
+        d: primaryPath,
+        fill: "none",
+        stroke: "rgba(31, 44, 50, 0.14)",
+        "stroke-width": 26,
+        "stroke-linecap": "round",
+        "stroke-linejoin": "round",
+      }));
+      svg.appendChild(createSvg("path", {
+        d: primaryPath,
+        fill: "none",
+        stroke: "rgba(255,255,255,0.72)",
+        "stroke-width": 3,
+        "stroke-dasharray": "12 14",
+        "stroke-linecap": "round",
+        "stroke-linejoin": "round",
+      }));
+      svg.appendChild(createSvg("line", {
+        x1: geometry.centerX,
+        y1: geometry.topY - 24,
+        x2: geometry.centerX,
+        y2: geometry.topY + 24,
+        stroke: "rgba(31, 44, 50, 0.25)",
+        "stroke-width": 3,
+        "stroke-dasharray": "8 6",
       }));
 
-      (frame.loading_stations || []).forEach((station) => {
-        const point = toPoint(station.position);
-        svg.appendChild(createSvg("rect", {
-          x: point.x - 6, y: point.y - 6, width: 12, height: 12, rx: 3,
-          fill: "#4b9f5f", stroke: "#2b6137", "stroke-width": 1.4,
-        }));
-        const label = createSvg("text", {
-          x: point.x + 9, y: point.y - 8, "font-size": 6, fill: "#275a34",
-          "font-family": "Cascadia Mono, Consolas, monospace",
-        });
-        label.textContent = `IP${station.id}`;
-        svg.appendChild(label);
+      svg.appendChild(createSvg("line", {
+        x1: geometry.leftX - 20,
+        y1: geometry.loadingY + 24,
+        x2: geometry.rightX + 20,
+        y2: geometry.loadingY + 24,
+        stroke: "rgba(75, 159, 95, 0.15)",
+        "stroke-width": 2,
+      }));
+      svg.appendChild(createSvg("line", {
+        x1: geometry.leftX - 20,
+        y1: geometry.unloadingY - 24,
+        x2: geometry.rightX + 20,
+        y2: geometry.unloadingY - 24,
+        stroke: "rgba(77, 121, 199, 0.15)",
+        "stroke-width": 2,
+      }));
+      svg.appendChild(bandLabel("上料口带区", 68, geometry.loadingTitleY, "#2b6137"));
+      svg.appendChild(bandLabel("下料口带区", 68, geometry.unloadingTitleY, "#264f95"));
 
-        (station.slots || []).forEach((slot) => {
-          if (!slot.occupied) return;
-          const offset = slot.slot_index === 0 ? 7 : -7;
-          const cargoX = point.x + offset * Math.cos(point.angle + Math.PI / 2);
-          const cargoY = point.y + offset * Math.sin(point.angle + Math.PI / 2);
-          svg.appendChild(createSvg("rect", {
-            x: cargoX - 2.4, y: cargoY - 2.4, width: 4.8, height: 4.8,
-            fill: "#f0c44f", stroke: "#b8781d", "stroke-width": 0.8,
-          }));
-          const cargoLabel = createSvg("text", {
-            x: cargoX, y: cargoY - 4.8, "font-size": 4.5, "text-anchor": "middle",
-            fill: "#173742", "font-family": "Cascadia Mono, Consolas, monospace",
-          });
-          cargoLabel.textContent = slot.destination_text || "";
-          svg.appendChild(cargoLabel);
-        });
-      });
+      const renderStation = (station, kind) => {
+        const isLoading = kind === "loading";
+        const anchor = positionToStationAnchor(station.position, kind, geometry);
+        const cardY = isLoading ? anchor.y - 26 : anchor.y - 4;
+        const lineStartY = isLoading ? anchor.y + 10 : anchor.y - 10;
+        const lineEndY = isLoading ? geometry.topY - 32 : geometry.bottomY + 32;
+        const toneFill = isLoading ? "#4b9f5f" : "#4d79c7";
+        const toneStroke = isLoading ? "#2b6137" : "#264f95";
+        const detail = stationStatusText(station, kind);
 
-      (frame.unloading_stations || []).forEach((station) => {
-        const point = toPoint(station.position);
-        svg.appendChild(createSvg("rect", {
-          x: point.x - 6, y: point.y - 6, width: 12, height: 12, rx: 2.5,
-          fill: "#4d79c7", stroke: "#264f95", "stroke-width": 1.4,
+        svg.appendChild(createSvg("line", {
+          x1: anchor.x,
+          y1: lineStartY,
+          x2: anchor.x,
+          y2: lineEndY,
+          stroke: isLoading ? "rgba(75, 159, 95, 0.34)" : "rgba(77, 121, 199, 0.34)",
+          "stroke-width": 2.4,
         }));
-        const label = createSvg("text", {
-          x: point.x + 9, y: point.y + 12, "font-size": 6, fill: "#264f95",
-          "font-family": "Cascadia Mono, Consolas, monospace",
+        svg.appendChild(createSvg("circle", {
+          cx: anchor.x,
+          cy: lineEndY,
+          r: 4.5,
+          fill: toneFill,
+          stroke: toneStroke,
+          "stroke-width": 1.2,
+        }));
+        svg.appendChild(createSvg("rect", {
+          x: anchor.x - 34,
+          y: cardY,
+          width: 68,
+          height: 30,
+          rx: 10,
+          fill: isLoading ? "rgba(75, 159, 95, 0.14)" : "rgba(77, 121, 199, 0.14)",
+          stroke: toneStroke,
+          "stroke-width": 1.2,
+        }));
+
+        const title = createSvg("text", {
+          x: anchor.x,
+          y: cardY + 12,
+          fill: toneStroke,
+          "font-size": 9.5,
+          "font-family": "Bahnschrift, Segoe UI, sans-serif",
+          "font-weight": 700,
+          "text-anchor": "middle",
         });
-        label.textContent = `OP${station.id}`;
-        svg.appendChild(label);
-      });
+        title.textContent = `${isLoading ? "IP" : "OP"}${station.id}`;
+        svg.appendChild(title);
+
+        const detailText = createSvg("text", {
+          x: anchor.x,
+          y: cardY + 24,
+          fill: "#516166",
+          "font-size": 6.2,
+          "font-family": "Cascadia Mono, Consolas, monospace",
+          "text-anchor": "middle",
+        });
+        detailText.textContent = detail;
+        svg.appendChild(detailText);
+      };
+
+      (frame.loading_stations || []).forEach((station) => renderStation(station, "loading"));
+      (frame.unloading_stations || []).forEach((station) => renderStation(station, "unloading"));
 
       (frame.vehicles || []).forEach((vehicle) => {
-        const point = toPoint(vehicle.position);
+        const point = positionToTrackPoint(vehicle.position, geometry);
         const color = palette[vehicle.id % palette.length];
-        svg.appendChild(createSvg("circle", {
-          cx: point.x, cy: point.y, r: 7, fill: color,
+        const group = createSvg("g", {
+          transform: `translate(${point.x} ${point.y}) rotate(${point.angleDeg})`,
+        });
+        group.appendChild(createSvg("rect", {
+          x: -16,
+          y: -9,
+          width: 32,
+          height: 18,
+          rx: 6,
+          fill: color,
           stroke: vehicle.is_loading_unloading ? "#7d2f24" : "#21353c",
           "stroke-width": vehicle.is_loading_unloading ? 3 : 1.8,
         }));
-
-        if (Math.abs(Number(vehicle.velocity || 0)) > 0.1) {
-          const tangent = point.angle - Math.PI / 2;
-          const arrowLength = Math.min(Math.abs(Number(vehicle.velocity || 0)) * 2.2, 14);
-          const endX = point.x + arrowLength * Math.cos(tangent);
-          const endY = point.y + arrowLength * Math.sin(tangent);
-          svg.appendChild(createSvg("line", {
-            x1: point.x, y1: point.y, x2: endX, y2: endY,
-            stroke: "#f0c44f", "stroke-width": 2.2, "stroke-linecap": "round",
+        group.appendChild(createSvg("rect", {
+          x: -6,
+          y: -4,
+          width: 12,
+          height: 8,
+          rx: 2.5,
+          fill: "rgba(255,255,255,0.28)",
+          stroke: "rgba(255,255,255,0.5)",
+          "stroke-width": 0.8,
+        }));
+        if (Number(vehicle.slot_count || 0) > 0) {
+          group.appendChild(createSvg("circle", {
+            cx: 12,
+            cy: -7,
+            r: 4.5,
+            fill: "#f0c44f",
+            stroke: "#8a6317",
+            "stroke-width": 0.8,
           }));
-          svg.appendChild(createSvg("circle", { cx: endX, cy: endY, r: 1.8, fill: "#f0c44f" }));
+          const cargoCount = createSvg("text", {
+            x: 12,
+            y: -5.4,
+            fill: "#453003",
+            "font-size": 6,
+            "font-family": "Cascadia Mono, Consolas, monospace",
+            "text-anchor": "middle",
+            "font-weight": 700,
+          });
+          cargoCount.textContent = String(vehicle.slot_count ?? 0);
+          group.appendChild(cargoCount);
         }
-
         const label = createSvg("text", {
-          x: point.x, y: point.y + 2, "font-size": 4.8, "text-anchor": "middle",
-          fill: "white", "font-weight": "700", "font-family": "Bahnschrift, Segoe UI, sans-serif",
+          x: 0,
+          y: 3.5,
+          fill: "white",
+          "font-size": 8,
+          "font-weight": 700,
+          "font-family": "Bahnschrift, Segoe UI, sans-serif",
+          "text-anchor": "middle",
+          transform: `rotate(${-point.angleDeg})`,
         });
         label.textContent = `V${vehicle.id}`;
-        svg.appendChild(label);
-
-        if (Number(vehicle.slot_count || 0) > 0) {
-          const cargoLabel = createSvg("text", {
-            x: point.x * 0.84, y: point.y * 0.84, "font-size": 5, "text-anchor": "middle",
-            fill: "#5d4308", "font-family": "Cascadia Mono, Consolas, monospace",
-          });
-          cargoLabel.textContent = vehicle.cargo_label || `Box x${vehicle.slot_count}`;
-          svg.appendChild(cargoLabel);
-        }
+        group.appendChild(label);
+        svg.appendChild(group);
       });
     }
 
@@ -1297,16 +1554,81 @@
       `).join("");
     }
 
+    function compactPath(rawPath) {
+      if (!rawPath) return "--";
+      const normalized = String(rawPath).replaceAll("\\", "/");
+      const parts = normalized.split("/").filter(Boolean);
+      return parts.length <= 3 ? normalized : parts.slice(-3).join("/");
+    }
+
+    function pathCode(rawPath, displayPath) {
+      const label = displayPath || compactPath(rawPath);
+      if (!label || label === "--") {
+        return "<code>--</code>";
+      }
+      const title = rawPath ? ` title="${escapeHtml(rawPath)}"` : "";
+      return `<code${title}>${escapeHtml(label)}</code>`;
+    }
+
+    function positionsText(values) {
+      if (!Array.isArray(values) || !values.length) return "--";
+      return values.map((value) => number(value, 1)).join(", ");
+    }
+
     function renderSummary(frame) {
       const summary = currentSummary();
+      const metadata = currentMetadata();
+      const configSnapshot = currentConfigSnapshot() || {};
+      const trainingStats = metadata.training_stats || {};
+      const provenance = metadata.data_provenance || {};
+      const learning = configSnapshot.learning || {};
+      const stations = configSnapshot.stations || {};
+      const cargo = configSnapshot.cargo || {};
+      const timing = configSnapshot.timing || {};
+      const rewards = configSnapshot.rewards || {};
+      const ppoDefaults = learning.ppo_defaults || {};
       const system = frame.system || {};
       const mappingEntries = Object.entries(summary.model_mapping || {});
+      const selectedModelId = metadata.selected_model_id || summary.selected_model_id;
       const chips = [];
       if (summary.kind) chips.push(`<span class="chip alt">${escapeHtml(summary.kind)}</span>`);
       if (summary.controller_mode) chips.push(`<span class="chip">${escapeHtml(summary.controller_mode)}</span>`);
       if (summary.seed != null) chips.push(`<span class="chip">seed ${summary.seed}</span>`);
       if (summary.visualization_sampling_interval != null) chips.push(`<span class="chip">采样 ${number(summary.visualization_sampling_interval, 1)}s</span>`);
+      if (selectedModelId) chips.push(`<span class="chip alt">model ${escapeHtml(selectedModelId)}</span>`);
+      if (metadata.deterministic_inference === true) chips.push('<span class="chip ok">deterministic</span>');
       if ((system.safety_violations || []).length) chips.push(`<span class="chip warn">Safety V${system.safety_violations.join(", V")}</span>`);
+
+      const algorithmNote = summary.kind === "train" && !trainingStats.available
+        ? "该训练回放未记录完整历史超参数，以下算法参数来自当前 config.py 快照。"
+        : (metadata.notes?.training_config_precision || "算法信息优先复用现有 summary、job config 和 training_stats.json。");
+
+      const trainingStatsCard = `
+        <div class="data-card">
+          <strong>训练统计</strong>
+          <div class="chip-row">
+            ${trainingStats.available ? '<span class="chip ok">training_stats.json</span>' : '<span class="chip warn">未记录 training_stats.json</span>'}
+            ${trainingStats.episode_count != null ? `<span class="chip">episodes ${escapeHtml(trainingStats.episode_count)}</span>` : ""}
+          </div>
+          <div class="kv tight">
+            <div>best_avg_reward: ${pathCode(null, number(trainingStats.best_avg_reward, 3))}</div>
+            <div>best_eval_reward: ${pathCode(null, number(trainingStats.best_eval_reward, 3))}</div>
+            <div>latest_reward: ${pathCode(null, number(trainingStats.latest_reward, 3))}</div>
+            <div>latest_completion: ${pathCode(null, trainingStats.latest_completion != null ? String(trainingStats.latest_completion) : "--")}</div>
+            <div>latest_actor_loss: ${pathCode(null, number(trainingStats.latest_actor_loss, 4))}</div>
+            <div>latest_critic_loss: ${pathCode(null, number(trainingStats.latest_critic_loss, 4))}</div>
+            <div>latest_entropy: ${pathCode(null, number(trainingStats.latest_entropy, 4))}</div>
+            <div>stats_file: ${pathCode(trainingStats.path, trainingStats.display_path)}</div>
+          </div>
+          <div class="detail-note">${trainingStats.available ? "以下 compact config 来自训练产物本身。" : "当前回放没有配套的 training_stats.json，页面仅显示现有 summary 和当前配置快照。"}</div>
+          <div class="kv tight">
+            <div>recorded_low_level_control: ${pathCode(null, trainingStats.config?.low_level_control || "--")}</div>
+            <div>recorded_high_level_control: ${pathCode(null, trainingStats.config?.high_level_control || "--")}</div>
+            <div>recorded_run_label: ${pathCode(null, trainingStats.config?.run_label || "--")}</div>
+            <div>recorded_model_output_prefix: ${pathCode(null, trainingStats.config?.model_output_prefix || "--")}</div>
+          </div>
+        </div>
+      `;
 
       dom.summaryList.innerHTML = `
         <div class="data-card">
@@ -1316,15 +1638,65 @@
             <div>job_id: <code>${escapeHtml(summary.job_id || "--")}</code></div>
             <div>episode_id: <code>${escapeHtml(summary.episode_id || "--")}</code></div>
             <div>episode_index: <code>${escapeHtml(summary.episode_index || "--")}</code></div>
+            <div>selected_model_id: <code>${escapeHtml(selectedModelId || "--")}</code></div>
             <div>生成货物: <code>${summary.generated_cargos ?? "--"}</code></div>
             <div>平均完成时间: <code>${number(summary.average_completion_time, 1)}s</code></div>
             <div>创建时间: <code>${escapeHtml(summary.created_at || "--")}</code></div>
           </div>
         </div>
         <div class="data-card">
+          <strong>算法参数</strong>
+          <div class="chip-row">
+            ${summary.kind === "train" ? '<span class="chip alt">训练视角</span>' : '<span class="chip ok">测试视角</span>'}
+            ${configSnapshot.source_file ? `<span class="chip">current config.py</span>` : ""}
+          </div>
+          <div class="detail-note">${escapeHtml(algorithmNote)}</div>
+          <div class="kv tight">
+            <div>controller_mode: <code>${escapeHtml(summary.controller_mode || "--")}</code></div>
+            <div>source_model_path: ${pathCode(metadata.source_model_path || summary.source_model_path, compactPath(metadata.source_model_path || summary.source_model_path))}</div>
+            <div>learning_rate: <code>${number(learning.learning_rate, 6)}</code></div>
+            <div>batch_size: <code>${escapeHtml(learning.batch_size ?? "--")}</code></div>
+            <div>gamma: <code>${number(learning.gamma, 2)}</code></div>
+            <div>hidden_dim: <code>${escapeHtml(learning.hidden_dim ?? "--")}</code></div>
+            <div>steps_per_update: <code>${escapeHtml(learning.steps_per_update ?? "--")}</code></div>
+            <div>scheduler: <code>${learning.scheduler?.enabled ? `WarmCosine (${learning.scheduler.warmup_episodes}ep)` : "disabled"}</code></div>
+            <div>ppo clip/value/entropy: <code>${number(ppoDefaults.clip_epsilon, 2)} / ${number(ppoDefaults.value_coef, 2)} / ${number(ppoDefaults.entropy_coef, 2)}</code></div>
+            <div>ppo gae_lambda / epochs: <code>${number(ppoDefaults.gae_lambda, 2)} / ${escapeHtml(ppoDefaults.n_epochs ?? "--")}</code></div>
+            <div>reward delivery/pickup: <code>${number(rewards.delivery, 2)} / ${number(rewards.pickup, 2)}</code></div>
+            <div>reward timeout penalty: <code>${number(rewards.timeout_penalty, 2)}</code></div>
+          </div>
+        </div>
+        ${trainingStatsCard}
+        <div class="data-card">
+          <strong>数据来源</strong>
+          <div class="chip-row">
+            <span class="chip ok">${escapeHtml(provenance.kind || "seeded_simulation")}</span>
+            <span class="chip">非外部数据集</span>
+          </div>
+          <div class="detail-note">${escapeHtml(provenance.description || "数据来自带 seed 的仿真环境。")}</div>
+          <div class="kv tight">
+            <div>config_source: ${pathCode(provenance.config_source?.path || configSnapshot.source_file, provenance.config_source?.display_path || compactPath(configSnapshot.source_file))}</div>
+            <div>loading_positions: <code>${escapeHtml(positionsText(provenance.station_layout?.loading_positions || stations.loading_positions))}</code></div>
+            <div>unloading_positions: <code>${escapeHtml(positionsText(provenance.station_layout?.unloading_positions || stations.unloading_positions))}</code></div>
+            <div>arrival_window: <code>${escapeHtml((provenance.cargo_generation?.arrival_window_seconds || [cargo.arrival_interval_min, cargo.arrival_interval_max]).join(" - "))}s</code></div>
+            <div>cargo_timeout: <code>${number(provenance.cargo_generation?.cargo_timeout_seconds || cargo.cargo_timeout, 1)}s</code></div>
+            <div>episode_duration: <code>${number(provenance.control_timing?.episode_duration_seconds || timing.episode_duration, 0)}s</code></div>
+            <div>decision / control interval: <code>${number(provenance.control_timing?.decision_interval_seconds || timing.high_level_decision_interval, 1)} / ${number(provenance.control_timing?.control_interval_seconds || timing.low_level_control_interval, 1)}s</code></div>
+          </div>
+        </div>
+        <div class="data-card">
+          <strong>路径与产物</strong>
+          <div class="kv tight">
+            <div>episode_dir: ${pathCode(metadata.paths?.episode_dir, metadata.paths?.episode_dir_display)}</div>
+            <div>report_html: ${pathCode(metadata.paths?.report_path, metadata.paths?.report_path_display)}</div>
+            <div>training_stats: ${pathCode(trainingStats.path, trainingStats.display_path)}</div>
+            <div>source_model: ${pathCode(metadata.source_model_path || summary.source_model_path, compactPath(metadata.source_model_path || summary.source_model_path))}</div>
+          </div>
+        </div>
+        <div class="data-card">
           <strong>模型映射</strong>
           <div class="kv">
-            ${mappingEntries.length ? mappingEntries.map(([vehicleId, path]) => `<div>V${vehicleId}: <code>${escapeHtml(path)}</code></div>`).join("") : "<div>训练回放没有固定模型映射，使用的是当时的在线策略状态。</div>"}
+            ${mappingEntries.length ? mappingEntries.map(([vehicleId, path]) => `<div>V${vehicleId}: ${pathCode(path, compactPath(path))}</div>`).join("") : "<div>训练回放没有固定模型映射，使用的是当时的在线策略状态。</div>"}
           </div>
         </div>
       `;
@@ -1332,13 +1704,15 @@
 
     function renderEpisodeHeader(frame) {
       const summary = currentSummary();
+      const selectedModelId = currentMetadata().selected_model_id || summary.selected_model_id;
       dom.episodeTitle.textContent = summary.episode_id || summary.run_label || "AGV Episode Replay";
       dom.episodeSubtitle.textContent = summary.kind === "train"
-        ? "训练 episode 回放，包含当次采样状态、货物字段、站点状态与历史统计。"
-        : "测试 episode 回放，使用选定模型做 deterministic 推理。";
+        ? "训练 episode 回放，展示训练统计与当前配置快照。"
+        : `测试 episode 回放，使用模型组 ${selectedModelId || "--"} 做 deterministic 推理。`;
       dom.episodeMeta.innerHTML = `
         kind: ${escapeHtml(summary.kind || "--")}<br/>
         episode: ${escapeHtml(summary.episode_index || "--")}<br/>
+        model: ${escapeHtml(selectedModelId || "--")}<br/>
         seed: ${escapeHtml(summary.seed || "--")}<br/>
         duration: ${number(summary.episode_duration, 0)}s
       `;
@@ -1463,9 +1837,17 @@
             <span class="chip ${job.status === "completed" ? "ok" : (job.status === "failed" ? "warn" : "alt")}">${escapeHtml(job.status)}</span>
             <span class="chip">progress ${(Number(job.progress || 0) * 100).toFixed(0)}%</span>
             <span class="chip">${escapeHtml(job.kind)}</span>
+            ${job.data_source_label ? `<span class="chip alt">${escapeHtml(job.data_source_label)}</span>` : ""}
           </div>
-          <div class="job-meta">${escapeHtml(job.message || "")}</div>
-          <div class="job-meta">episodes ${job.completed_episodes || 0} / ${job.episode_count || 0}</div>
+          <div class="job-meta wrap">${escapeHtml(job.message || "")}</div>
+          <div class="job-meta wrap">
+            episodes ${job.completed_episodes || 0} / ${job.episode_count || 0}
+            ${job.kind === "train" ? ` · sample ${escapeHtml(job.config_summary?.sample_interval ?? "--")}s · device ${escapeHtml(job.config_summary?.device || "--")}` : ""}
+            ${job.kind === "test" ? ` · seed ${escapeHtml(job.config_summary?.seed ?? "--")} · model ${escapeHtml(job.config_summary?.model_id || "--")}` : ""}
+          </div>
+          ${job.generated_model_sets?.length ? `<div class="job-meta wrap">产出模型: ${escapeHtml(job.generated_model_sets.join(", "))}</div>` : ""}
+          ${job.output_dir_display ? `<div class="job-meta wrap">输出目录: ${escapeHtml(job.output_dir_display)}</div>` : ""}
+          ${job.error ? `<details class="job-error"><summary>查看错误详情</summary><pre>${escapeHtml(job.error)}</pre></details>` : ""}
         </div>
       `).join("");
     }
@@ -1482,9 +1864,15 @@
             <span class="chip ${episode.kind === "train" ? "alt" : "ok"}">${escapeHtml(episode.kind || "--")}</span>
             <span class="chip">seed ${escapeHtml(episode.seed || "--")}</span>
             <span class="chip">completed ${escapeHtml(episode.completed_cargos || 0)}</span>
+            ${episode.selected_model_id ? `<span class="chip alt">model ${escapeHtml(episode.selected_model_id)}</span>` : ""}
+            ${episode.training_stats_available ? '<span class="chip ok">stats</span>' : ""}
           </div>
           <div class="list-meta">${escapeHtml(episode.created_at || "")}</div>
-          <div class="list-meta">${escapeHtml(episode.controller_mode || "")}</div>
+          <div class="list-meta wrap">${escapeHtml(episode.controller_mode || "")}</div>
+          <div class="list-meta wrap">
+            ${episode.report_path_display ? `report ${escapeHtml(episode.report_path_display)}` : ""}
+            ${episode.training_stats_path_display ? ` · stats ${escapeHtml(episode.training_stats_path_display)}` : ""}
+          </div>
         </button>
       `).join("");
       dom.episodeLibrary.querySelectorAll("[data-episode-id]").forEach((node) => {
@@ -1505,7 +1893,7 @@
             <span class="chip">vehicles ${escapeHtml(model.vehicle_ids.join(", "))}</span>
           </div>
           <div class="list-meta">${escapeHtml(model.updated_at || "")}</div>
-          <div class="list-meta">${Object.entries(model.paths || {}).map(([vehicleId, path]) => `V${vehicleId}: ${path}`).join(" | ")}</div>
+          <div class="list-meta wrap">${Object.entries(model.display_paths || model.paths || {}).map(([vehicleId, path]) => `V${vehicleId}: ${escapeHtml(path)}`).join(" | ")}</div>
         </div>
       `).join("");
     }
@@ -1562,13 +1950,14 @@
         state.jobs = payload.jobs || [];
         state.models = payload.models || [];
         state.episodes = payload.episodes || [];
+        state.configSnapshot = payload.config_snapshot || state.configSnapshot;
         toggleControlAvailability(state.apiEnabled);
         populateModelSelect();
         renderJobs();
         renderEpisodeLibrary();
         renderModelLibrary();
         setStatus(state.apiEnabled ? "本地后端已连接，可直接发起 train / test" : "后端未启用", state.apiEnabled ? "ok" : "warn");
-        dom.workspaceHint.textContent = payload.workspace ? `工作区: ${payload.workspace}` : "工作区路径不可用";
+        dom.workspaceHint.textContent = payload.workspace ? `工作区: ${payload.workspace} | 配置来自当前 config.py` : "工作区路径不可用";
         if ((!state.episode || !currentFrames().length) && state.episodes.length) {
           await loadEpisodeById(state.episodes[0].episode_id);
         } else if (state.currentEpisodeId) {
