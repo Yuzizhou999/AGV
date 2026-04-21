@@ -157,10 +157,8 @@ class DemoRunner:
             if c.completion_time is None and self.env.is_cargo_at_loading_station(c) and c.picked_up_time is None
         )
         on_vehicle_count = sum(
-            1
+            len(self.env._vehicle_unique_cargo_ids(vehicle))
             for vehicle in self.env.vehicles.values()
-            for cargo_id in vehicle.slots
-            if cargo_id is not None
         )
         
         print(f"  总货物数: {self.env.cargo_counter}")
