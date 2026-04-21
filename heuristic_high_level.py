@@ -66,7 +66,8 @@ class HeuristicHighLevelController:
         for cargo in self.env.cargos.values():
             if (cargo.assigned_vehicle is not None and 
                 self.env.is_cargo_at_loading_station(cargo)):
-                assigned_vehicle_slots.add((cargo.assigned_vehicle, cargo.assigned_vehicle_slot))
+                for slot_idx in self.env._assigned_slot_indices(cargo):
+                    assigned_vehicle_slots.add((cargo.assigned_vehicle, slot_idx))
         
         # 遍历等待的货物
         for cargo_info in waiting_cargos:
@@ -83,25 +84,20 @@ class HeuristicHighLevelController:
             
             # 找到离上料口最近的空闲小车
             best_vehicle_id = None
-            best_slot_idx = None
+            best_slot_indices = None
             min_distance = float('inf')
             
             for vehicle_id, vehicle in self.env.vehicles.items():
-                # 检查车辆是否有空工位
-                for slot_idx in range(2):
-                    if (vehicle.slots[slot_idx] is None and 
-                        (vehicle_id, slot_idx) not in assigned_vehicle_slots):
-                        # 计算距离（考虑环形轨道）
-                        distance = vehicle.distance_to(loading_position)
-                        
-                        if distance < min_distance:
-                            min_distance = distance
-                            best_vehicle_id = vehicle_id
-                            best_slot_idx = slot_idx
-                
-                # 找到空工位后跳出（每个车辆只检查一个工位）
-                if best_vehicle_id == vehicle_id:
-                    break
+                candidate_groups = self.env._vehicle_available_slot_groups(vehicle_id, cargo)
+                for slot_group in candidate_groups:
+                    if any((vehicle_id, slot_idx) in assigned_vehicle_slots for slot_idx in slot_group):
+                        continue
+
+                    distance = vehicle.distance_to(loading_position)
+                    if distance < min_distance:
+                        min_distance = distance
+                        best_vehicle_id = vehicle_id
+                        best_slot_indices = slot_group
             
             # 如果找到合适的车辆，立即分配
             if best_vehicle_id is not None:
@@ -109,7 +105,7 @@ class HeuristicHighLevelController:
                     'type': 'assign_loading',
                     'cargo_id': cargo_id,
                     'vehicle_id': best_vehicle_id,
-                    'slot_idx': best_slot_idx,
+                    'slot_indices': list(best_slot_indices or ()),
                     'priority': cargo_info.get('priority', 0)
                 }
         
@@ -127,23 +123,54 @@ class HeuristicHighLevelController:
         """
         # 遍历所有车辆，找到需要分配下料目标的货物
         for vehicle_id, vehicle in self.env.vehicles.items():
-            for slot_idx, cargo_id in enumerate(vehicle.slots):
-                if cargo_id is not None:
-                    cargo = self.env.cargos[cargo_id]
-                    
-                    # 如果货物还没有分配下料目标
-                    if cargo.target_unloading_station is None:
-                        # 简单策略：选择允许的第一个下料口
-                        # （可以改进为选择最近的下料口）
-                        allowed_stations = list(cargo.allowed_unloading_stations)
-                        if allowed_stations:
-                            target_station_id = allowed_stations[0]
-                            
-                            return {
-                                'type': 'assign_unloading',
-                                'cargo_id': cargo_id,
-                                'unloading_station_id': target_station_id,
-                                'slot_idx': 0  # 默认使用第一个工位
-                            }
+            for cargo_id in self.env._vehicle_unique_cargo_ids(vehicle):
+                if cargo_id is None or cargo_id not in self.env.cargos:
+                    continue
+                cargo = self.env.cargos[cargo_id]
+
+                if cargo.target_unloading_station is not None:
+                    continue
+
+                target_station_id = self._select_unloading_station(vehicle_id, cargo)
+                if target_station_id is None:
+                    continue
+
+                return {
+                    'type': 'assign_unloading',
+                    'cargo_id': cargo_id,
+                    'unloading_station_id': target_station_id,
+                    'slot_idx': 0
+                }
         
         return None
+
+    def _select_unloading_station(self, vehicle_id: int, cargo) -> Optional[int]:
+        """优先固定主下料口，仅在备选口明显更近时切换。"""
+        vehicle = self.env.vehicles[vehicle_id]
+        allowed_stations = sorted(int(station_id) for station_id in cargo.allowed_unloading_stations)
+        if not allowed_stations:
+            return None
+
+        primary_station = cargo.primary_unloading_station
+        if primary_station not in allowed_stations:
+            primary_station = allowed_stations[0]
+
+        primary_distance = vehicle.distance_to(self.env.unloading_stations[primary_station].position)
+        best_station = primary_station
+        best_distance = primary_distance
+
+        for station_id in allowed_stations:
+            station = self.env.unloading_stations.get(station_id)
+            if station is None:
+                continue
+            distance = vehicle.distance_to(station.position)
+            if distance < best_distance:
+                best_distance = distance
+                best_station = station_id
+
+        if (
+            best_station != primary_station
+            and best_distance + ALTERNATIVE_UNLOADING_SWITCH_DISTANCE < primary_distance
+        ):
+            return best_station
+        return primary_station

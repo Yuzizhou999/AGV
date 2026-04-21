@@ -420,7 +420,8 @@ class HeuristicLowLevelController:
                 if (cargo.loading_station == loading_station.id and
                     self.env.is_cargo_at_loading_station(cargo) and
                     cargo.completion_time is None and
-                    (cargo.assigned_vehicle is None or cargo.assigned_vehicle == vehicle_id)):
+                    (cargo.assigned_vehicle is None or cargo.assigned_vehicle == vehicle_id) and
+                    self.env.vehicle_can_accept_cargo(vehicle_id, cargo)):
                     has_waiting_cargo = True
                     break
             

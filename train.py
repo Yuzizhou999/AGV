@@ -487,10 +487,8 @@ class TrainingManager:
         total_cargos = self.env.cargo_counter
         waiting_cargos = waiting_cargos_normal + waiting_cargos_timeout  # 总等待数
         on_vehicle_cargos = sum(
-            1
+            len(self.env._vehicle_unique_cargo_ids(vehicle))
             for vehicle in self.env.vehicles.values()
-            for cargo_id in vehicle.slots
-            if cargo_id is not None
         )
         
         # 平均等待时间(从到达到被取走)

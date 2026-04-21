@@ -85,7 +85,7 @@ class RLLowLevelObservation:
         has_task = float(env.has_vehicle_task(vehicle_id))
 
         task_urgency = 0.0
-        for cargo_id in vehicle.slots:
+        for cargo_id in env._vehicle_unique_cargo_ids(vehicle):
             if cargo_id is not None:
                 cargo = env.cargos[cargo_id]
                 wait_time = env.current_time - cargo.arrival_time
