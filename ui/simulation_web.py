@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import atexit
+from collections import OrderedDict
 import json
 import mimetypes
+import os
 import re
+import sys
 import threading
 import traceback
 import uuid
@@ -14,8 +18,6 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import unquote, urlparse
 
 if __package__ in (None, ""):
-    import sys
-
     workspace_root = Path(__file__).resolve().parent.parent
     if str(workspace_root) not in sys.path:
         sys.path.insert(0, str(workspace_root))
@@ -30,6 +32,10 @@ from ui.dashboard_metadata import (
 
 
 MODEL_SET_PATTERN = re.compile(r"(?P<prefix>.+)_v(?P<vehicle_id>\d+)\.pth$")
+ACTIVE_JOB_STATUSES = {"queued", "running"}
+TERMINAL_JOB_STATUSES = {"completed", "failed", "interrupted"}
+JOB_STATE_FILENAME = ".simulation_web_jobs.json"
+EPISODE_CACHE_LIMIT = 2
 
 
 def _now_iso() -> str:
@@ -50,12 +56,132 @@ def _json_response(handler: BaseHTTPRequestHandler, status: int, payload: Dict[s
     handler.send_header("Content-Type", "application/json; charset=utf-8")
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
-    handler.wfile.write(body)
+    try:
+        handler.wfile.write(body)
+    except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError, OSError):
+        # Browsers may abort in-flight fetches when the user switches episodes quickly.
+        # Treat that as a normal cancellation path instead of a server error.
+        return
+
+
+def _required_vehicle_ids() -> List[int]:
+    snapshot = config_snapshot_summary()
+    vehicle_layout = snapshot.get("vehicle_layout", {}) or {}
+    required = vehicle_layout.get("required_vehicle_ids")
+    if isinstance(required, list) and required:
+        normalized = sorted({int(item) for item in required})
+        if normalized:
+            return normalized
+    return list(range(MAX_VEHICLES))
+
+
+def _parse_iso(value: Any) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value))
+    except ValueError:
+        return None
+
+
+def _file_mtime_iso(path: Path) -> Optional[str]:
+    try:
+        return datetime.fromtimestamp(path.stat().st_mtime).isoformat(timespec="seconds")
+    except OSError:
+        return None
+
+
+class SingleInstanceGuard:
+    def __init__(self, lock_path: Path, metadata: Dict[str, Any]):
+        self.lock_path = Path(lock_path)
+        self.metadata = metadata
+        self._handle = None
+        self._locked = False
+
+    def acquire(self) -> None:
+        self.lock_path.parent.mkdir(parents=True, exist_ok=True)
+        self._handle = self.lock_path.open("a+", encoding="utf-8")
+        self._ensure_lock_byte()
+        try:
+            self._lock_handle()
+        except OSError as exc:
+            existing_metadata = self._read_metadata_from_path()
+            details = existing_metadata or {}
+            pid = details.get("pid", "unknown")
+            started_at = details.get("started_at", "unknown")
+            host = details.get("host", self.metadata.get("host", "unknown"))
+            port = details.get("port", self.metadata.get("port", "unknown"))
+            raise RuntimeError(
+                f"Dashboard already running for {host}:{port} "
+                f"(pid={pid}, started_at={started_at}). Stop the existing instance before starting another one."
+            ) from exc
+
+        self._handle.seek(0)
+        self._handle.truncate()
+        self._handle.write(json.dumps(self.metadata, ensure_ascii=False, indent=2))
+        self._handle.flush()
+        self._locked = True
+        atexit.register(self.release)
+
+    def release(self) -> None:
+        if not self._handle:
+            return
+        try:
+            if self._locked:
+                self._unlock_handle()
+        finally:
+            self._locked = False
+            self._handle.close()
+            self._handle = None
+
+    def _ensure_lock_byte(self) -> None:
+        self._handle.seek(0, os.SEEK_END)
+        if self._handle.tell() == 0:
+            self._handle.write(" ")
+            self._handle.flush()
+
+    def _read_metadata(self) -> Dict[str, Any]:
+        try:
+            self._handle.seek(0)
+            raw = self._handle.read().strip()
+            return json.loads(raw) if raw else {}
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+    def _read_metadata_from_path(self) -> Dict[str, Any]:
+        try:
+            raw = self.lock_path.read_text(encoding="utf-8").strip()
+            return json.loads(raw) if raw else {}
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+    def _lock_handle(self) -> None:
+        self._handle.seek(0)
+        if os.name == "nt":
+            import msvcrt
+
+            msvcrt.locking(self._handle.fileno(), msvcrt.LK_NBLCK, 1)
+            return
+        import fcntl
+
+        fcntl.flock(self._handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def _unlock_handle(self) -> None:
+        self._handle.seek(0)
+        if os.name == "nt":
+            import msvcrt
+
+            msvcrt.locking(self._handle.fileno(), msvcrt.LK_UNLCK, 1)
+            return
+        import fcntl
+
+        fcntl.flock(self._handle.fileno(), fcntl.LOCK_UN)
 
 
 def discover_model_sets(models_dir: Path) -> List[Dict[str, Any]]:
     models_dir = Path(models_dir)
     groups: Dict[str, Dict[str, Any]] = {}
+    required_vehicle_ids = _required_vehicle_ids()
     if not models_dir.exists():
         return []
 
@@ -81,6 +207,10 @@ def discover_model_sets(models_dir: Path) -> List[Dict[str, Any]]:
                 "vehicle_ids": [],
                 "updated_at": None,
                 "complete": False,
+                "required_vehicle_ids": required_vehicle_ids,
+                "missing_vehicle_ids": [],
+                "complete_for_current_config": False,
+                "completeness_reason": "",
             },
         )
         group["paths"][str(vehicle_id)] = str(model_path.resolve())
@@ -94,11 +224,23 @@ def discover_model_sets(models_dir: Path) -> List[Dict[str, Any]]:
     for group in groups.values():
         unique_vehicle_ids = sorted(set(group["vehicle_ids"]))
         group["vehicle_ids"] = unique_vehicle_ids
-        group["complete"] = unique_vehicle_ids == list(range(MAX_VEHICLES))
+        missing_vehicle_ids = [vehicle_id for vehicle_id in required_vehicle_ids if vehicle_id not in unique_vehicle_ids]
+        group["missing_vehicle_ids"] = missing_vehicle_ids
+        group["complete_for_current_config"] = not missing_vehicle_ids
+        group["complete"] = group["complete_for_current_config"]
+        if missing_vehicle_ids:
+            missing_text = ", ".join(f"V{vehicle_id}" for vehicle_id in missing_vehicle_ids)
+            required_text = ", ".join(f"V{vehicle_id}" for vehicle_id in required_vehicle_ids)
+            found_text = ", ".join(f"V{vehicle_id}" for vehicle_id in unique_vehicle_ids) or "none"
+            group["completeness_reason"] = (
+                f"当前配置要求 {required_text}，模型组仅包含 {found_text}，缺少 {missing_text}，因此不能直接用于当前配置测试。"
+            )
+        else:
+            group["completeness_reason"] = "模型组已覆盖当前配置要求的全部车辆。"
         discovered.append(group)
 
     discovered.sort(
-        key=lambda item: (item["complete"], item["updated_at"] or "", item["id"]),
+        key=lambda item: (item["complete_for_current_config"], item["updated_at"] or "", item["id"]),
         reverse=True,
     )
     return discovered
@@ -132,24 +274,171 @@ def discover_saved_episodes(runs_dir: Path, workspace: Optional[Path] = None) ->
 
 
 class SimulationWebApp:
-    def __init__(self, workspace: Path):
+    def __init__(self, workspace: Path, host: str, port: int):
         self.workspace = Path(workspace).resolve()
+        self.host = host
+        self.port = port
         self.models_dir = self.workspace / "models"
         self.runs_dir = self.workspace / "outputs" / "web_runs"
         self.runs_dir.mkdir(parents=True, exist_ok=True)
+        self.jobs_state_path = self.runs_dir / JOB_STATE_FILENAME
+        self.instance_guard = SingleInstanceGuard(
+            self.runs_dir / f".simulation_web_{host.replace(':', '_')}_{port}.lock",
+            {
+                "pid": os.getpid(),
+                "host": host,
+                "port": port,
+                "workspace": str(self.workspace),
+                "started_at": _now_iso(),
+                "argv": sys.argv,
+            },
+        )
+        self.instance_guard.acquire()
         self.jobs: Dict[str, Dict[str, Any]] = {}
-        self.lock = threading.Lock()
+        self.job_threads: Dict[str, threading.Thread] = {}
+        self.lock = threading.RLock()
+        self.watchdog_stop = threading.Event()
+        self.episode_index: Dict[str, Path] = {}
+        self.episode_payload_cache: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
+        self._load_jobs()
+        self._refresh_episode_index()
+        self._reconcile_persisted_jobs()
+        self.watchdog_thread = threading.Thread(target=self._watchdog_loop, daemon=True)
+        self.watchdog_thread.start()
+        atexit.register(self.shutdown)
 
     def _job_dir(self, job_id: str) -> Path:
         return self.runs_dir / job_id
 
+    def shutdown(self) -> None:
+        self.watchdog_stop.set()
+        self.instance_guard.release()
+
+    def _persist_jobs_locked(self) -> None:
+        payload = {
+            "saved_at": _now_iso(),
+            "jobs": list(self.jobs.values()),
+        }
+        temp_path = self.jobs_state_path.with_suffix(".tmp")
+        temp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        temp_path.replace(self.jobs_state_path)
+
+    def _load_jobs(self) -> None:
+        if not self.jobs_state_path.exists():
+            return
+        try:
+            payload = json.loads(self.jobs_state_path.read_text(encoding="utf-8-sig"))
+        except (OSError, json.JSONDecodeError):
+            return
+        entries = payload.get("jobs", payload if isinstance(payload, list) else [])
+        if not isinstance(entries, list):
+            return
+        for entry in entries:
+            if isinstance(entry, dict) and entry.get("id"):
+                self.jobs[str(entry["id"])] = entry
+
+    def _completed_episode_dirs(self, job: Dict[str, Any]) -> List[Path]:
+        output_dir = Path(job.get("output_dir") or self._job_dir(job["id"]))
+        episodes_dir = output_dir / "episodes"
+        if not episodes_dir.exists():
+            return []
+        completed: List[Path] = []
+        for episode_dir in sorted((path for path in episodes_dir.iterdir() if path.is_dir()), key=lambda item: item.name):
+            required_files = ("episode.json", "summary.json", "simulation_report.html")
+            if all((episode_dir / filename).exists() for filename in required_files):
+                completed.append(episode_dir)
+        return completed
+
+    def _latest_artifact_time(self, job: Dict[str, Any]) -> Optional[str]:
+        output_dir = Path(job.get("output_dir") or self._job_dir(job["id"]))
+        latest_iso: Optional[str] = None
+        latest_dt: Optional[datetime] = None
+        if not output_dir.exists():
+            return None
+        for path in output_dir.rglob("*"):
+            if not path.is_file():
+                continue
+            current_iso = _file_mtime_iso(path)
+            current_dt = _parse_iso(current_iso)
+            if current_dt is None:
+                continue
+            if latest_dt is None or current_dt > latest_dt:
+                latest_dt = current_dt
+                latest_iso = current_iso
+        return latest_iso
+
+    def _recover_job_state_locked(self, job_id: str, reason: str) -> None:
+        job = self.jobs.get(job_id)
+        if not job:
+            return
+
+        completed_episode_dirs = self._completed_episode_dirs(job)
+        completed_episodes = len(completed_episode_dirs)
+        episode_count = max(1, int(job.get("episode_count", 1) or 1))
+        latest_episode_id = completed_episode_dirs[-1].name if completed_episode_dirs else None
+        latest_artifact_at = self._latest_artifact_time(job) or _now_iso()
+
+        updates: Dict[str, Any] = {
+            "completed_episodes": completed_episodes,
+            "latest_episode_id": latest_episode_id,
+            "progress": min(completed_episodes / episode_count, 1.0),
+            "finished_at": latest_artifact_at,
+        }
+        if completed_episodes >= episode_count:
+            updates.update(
+                status="completed",
+                progress=1.0,
+                message=f"Recovered completed job from artifacts ({reason})",
+            )
+        else:
+            updates.update(
+                status="interrupted",
+                message=(
+                    f"Recovered interrupted job: {reason}. "
+                    f"Completed episodes {completed_episodes}/{episode_count}."
+                ),
+            )
+        self.jobs[job_id].update(updates)
+        self.job_threads.pop(job_id, None)
+        self._persist_jobs_locked()
+
+    def _reconcile_persisted_jobs(self) -> None:
+        with self.lock:
+            active_jobs = [
+                job_id
+                for job_id, job in self.jobs.items()
+                if str(job.get("status")) in ACTIVE_JOB_STATUSES
+            ]
+            for job_id in active_jobs:
+                self._recover_job_state_locked(job_id, "previous dashboard instance is no longer running")
+            if active_jobs:
+                self._persist_jobs_locked()
+
+    def _watchdog_loop(self) -> None:
+        while not self.watchdog_stop.wait(2.0):
+            self._reconcile_live_jobs()
+
+    def _reconcile_live_jobs(self) -> None:
+        with self.lock:
+            for job_id, job in list(self.jobs.items()):
+                if str(job.get("status")) not in ACTIVE_JOB_STATUSES:
+                    continue
+                thread = self.job_threads.get(job_id)
+                if thread is None:
+                    self._recover_job_state_locked(job_id, "worker thread is missing in the current dashboard process")
+                    continue
+                if not thread.is_alive():
+                    self._recover_job_state_locked(job_id, "worker thread exited before publishing a terminal state")
+
     def list_jobs(self) -> List[Dict[str, Any]]:
+        self._reconcile_live_jobs()
         with self.lock:
             jobs = [summarize_job_record(job, self.workspace) for job in self.jobs.values()]
         jobs.sort(key=lambda item: item["created_at"], reverse=True)
         return jobs
 
     def get_state(self) -> Dict[str, Any]:
+        self._refresh_episode_index()
         return {
             "api_enabled": True,
             "workspace": str(self.workspace),
@@ -160,24 +449,59 @@ class SimulationWebApp:
             "server_time": _now_iso(),
         }
 
+    def _refresh_episode_index(self) -> None:
+        index: Dict[str, Path] = {}
+        if self.runs_dir.exists():
+            for episode_path in self.runs_dir.rglob("episode.json"):
+                index[episode_path.parent.name] = episode_path
+        with self.lock:
+            self.episode_index = index
+
+    def _get_cached_episode_payload(self, episode_id: str) -> Optional[Dict[str, Any]]:
+        with self.lock:
+            payload = self.episode_payload_cache.get(episode_id)
+            if payload is None:
+                return None
+            self.episode_payload_cache.move_to_end(episode_id)
+            return payload
+
+    def _store_episode_payload(self, episode_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        with self.lock:
+            self.episode_payload_cache[episode_id] = payload
+            self.episode_payload_cache.move_to_end(episode_id)
+            while len(self.episode_payload_cache) > EPISODE_CACHE_LIMIT:
+                self.episode_payload_cache.popitem(last=False)
+        return payload
+
     def load_episode(self, episode_id: str) -> Dict[str, Any]:
-        for episode_path in self.runs_dir.rglob("episode.json"):
-            if episode_path.parent.name != episode_id:
-                continue
-            payload = json.loads(episode_path.read_text(encoding="utf-8"))
-            return enrich_episode_payload(
-                payload,
-                workspace=self.workspace,
-                episode_dir=episode_path.parent,
-                report_path=episode_path.parent / "simulation_report.html",
-            )
-        raise FileNotFoundError(f"Episode not found: {episode_id}")
+        cached_payload = self._get_cached_episode_payload(episode_id)
+        if cached_payload is not None:
+            return cached_payload
+
+        episode_path = None
+        with self.lock:
+            episode_path = self.episode_index.get(episode_id)
+        if episode_path is None:
+            self._refresh_episode_index()
+            with self.lock:
+                episode_path = self.episode_index.get(episode_id)
+        if episode_path is None:
+            raise FileNotFoundError(f"Episode not found: {episode_id}")
+
+        payload = json.loads(episode_path.read_text(encoding="utf-8"))
+        enriched = enrich_episode_payload(
+            payload,
+            workspace=self.workspace,
+            episode_dir=episode_path.parent,
+            report_path=episode_path.parent / "simulation_report.html",
+        )
+        return self._store_episode_payload(episode_id, enriched)
 
     def resolve_model_set(self, model_id: str) -> Dict[str, Any]:
         for model_set in discover_model_sets(self.models_dir):
             if model_set["id"] == model_id:
-                if not model_set["complete"]:
-                    raise ValueError(f"Model set is incomplete: {model_id}")
+                if not model_set["complete_for_current_config"]:
+                    raise ValueError(model_set.get("completeness_reason") or f"Model set is incomplete: {model_id}")
                 return model_set
         raise FileNotFoundError(f"Model set not found: {model_id}")
 
@@ -203,12 +527,16 @@ class SimulationWebApp:
         }
         with self.lock:
             self.jobs[job_id] = job
+            self._persist_jobs_locked()
         return job
 
     def _update_job(self, job_id: str, **updates: Any) -> None:
         with self.lock:
             if job_id in self.jobs:
                 self.jobs[job_id].update(updates)
+                if str(self.jobs[job_id].get("status")) not in ACTIVE_JOB_STATUSES:
+                    self.job_threads.pop(job_id, None)
+                self._persist_jobs_locked()
 
     def start_train_job(self, config: Dict[str, Any]) -> Dict[str, Any]:
         num_episodes = max(1, int(config.get("num_episodes", 5)))
@@ -234,6 +562,9 @@ class SimulationWebApp:
             daemon=True,
         )
         thread.start()
+        with self.lock:
+            self.job_threads[job["id"]] = thread
+            self._persist_jobs_locked()
         return job
 
     def start_test_job(self, config: Dict[str, Any]) -> Dict[str, Any]:
@@ -265,6 +596,9 @@ class SimulationWebApp:
             daemon=True,
         )
         thread.start()
+        with self.lock:
+            self.job_threads[job["id"]] = thread
+            self._persist_jobs_locked()
         return job
 
     def _run_train_job(self, job_id: str, num_episodes: int, sample_interval: float, use_gpu: bool) -> None:
@@ -397,6 +731,9 @@ class SimulationWebApp:
 
 
 class DashboardHTTPServer(ThreadingHTTPServer):
+    allow_reuse_address = False
+    allow_reuse_port = False
+
     def __init__(self, server_address, request_handler_class, app: SimulationWebApp):
         super().__init__(server_address, request_handler_class)
         self.app = app
@@ -411,6 +748,12 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         route = parsed.path
+
+        if route == "/favicon.ico":
+            self.send_response(204)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
 
         if route == "/api/state":
             _json_response(self, 200, self.server.app.get_state())
@@ -494,11 +837,19 @@ def main() -> None:
     args = parser.parse_args()
 
     workspace = Path(__file__).resolve().parent.parent
-    app = SimulationWebApp(workspace)
-    server = DashboardHTTPServer((args.host, args.port), DashboardRequestHandler, app)
-    print(f"Dashboard running at http://{args.host}:{args.port}/simulation_report.html")
-    print(f"UI source lives at http://{args.host}:{args.port}/ui/simulation_report.html")
-    server.serve_forever()
+    try:
+        app = SimulationWebApp(workspace, args.host, args.port)
+        server = DashboardHTTPServer((args.host, args.port), DashboardRequestHandler, app)
+    except RuntimeError as exc:
+        raise SystemExit(str(exc)) from exc
+
+    try:
+        print(f"Dashboard running at http://{args.host}:{args.port}/simulation_report.html")
+        print(f"UI source lives at http://{args.host}:{args.port}/ui/simulation_report.html")
+        server.serve_forever()
+    finally:
+        server.server_close()
+        app.shutdown()
 
 
 if __name__ == "__main__":

@@ -640,6 +640,11 @@
       border-color: rgba(27, 106, 115, 0.28);
     }
 
+    .list-row.loading {
+      background: rgba(196, 141, 40, 0.1);
+      border-color: rgba(196, 141, 40, 0.26);
+    }
+
     .empty {
       padding: 14px;
       border-radius: 18px;
@@ -1562,6 +1567,7 @@
   <script>
     window.__SIMULATION_BOOTSTRAP__ = null;
     const query = new URLSearchParams(location.search);
+    const EPISODE_CACHE_LIMIT = 2;
 
     const state = {
       hasApi: location.protocol.startsWith("http"),
@@ -1581,6 +1587,9 @@
       timerId: null,
       refreshPromise: null,
       episodePromise: null,
+      episodeAbortController: null,
+      episodeRequestToken: 0,
+      episodeCache: new Map(),
       loadingEpisodeId: null,
       refreshIntervalId: null,
     };
@@ -1679,6 +1688,33 @@
       const mm = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0");
       const ss = String(seconds % 60).padStart(2, "0");
       return `${hh}:${mm}:${ss}`;
+    }
+
+    function rememberEpisodePayload(payload) {
+      const episodeId = payload?.summary?.episode_id;
+      if (!episodeId) return;
+      if (state.episodeCache.has(episodeId)) {
+        state.episodeCache.delete(episodeId);
+      }
+      state.episodeCache.set(episodeId, payload);
+      while (state.episodeCache.size > EPISODE_CACHE_LIMIT) {
+        const oldestEpisodeId = state.episodeCache.keys().next().value;
+        state.episodeCache.delete(oldestEpisodeId);
+      }
+    }
+
+    function cachedEpisodePayload(episodeId) {
+      if (!state.episodeCache.has(episodeId)) {
+        return null;
+      }
+      const payload = state.episodeCache.get(episodeId);
+      state.episodeCache.delete(episodeId);
+      state.episodeCache.set(episodeId, payload);
+      return payload;
+    }
+
+    function activeEpisodeListId() {
+      return state.loadingEpisodeId || state.currentEpisodeId;
     }
 
     function currentFrames() {
@@ -1870,6 +1906,11 @@
       return Math.min(Math.max(value, min), max);
     }
 
+    function sortedFiniteUnique(values) {
+      if (!Array.isArray(values)) return [];
+      return [...new Set(values.map((value) => Number(value)).filter((value) => Number.isFinite(value)))].sort((a, b) => a - b);
+    }
+
     function buildTrackGeometry() {
       const width = 1240;
       const height = 540;
@@ -1920,7 +1961,7 @@
       ].join(" ");
     }
 
-    function positionToTrackPoint(position, geometry = buildTrackGeometry()) {
+    function positionToPerimeterPoint(position, geometry = buildTrackGeometry()) {
       const length = trackLength();
       const distance = length > 0
         ? (normalizePosition(position) / length) * geometry.perimeter
@@ -1959,9 +2000,122 @@
       return { x: geometry.leftX + lastDistance, y: geometry.topY, angleDeg: 0 };
     }
 
+    function buildTrackTopologyMapper(summary = currentSummary(), geometry = buildTrackGeometry()) {
+      const loadingPositions = sortedFiniteUnique(summary.loading_positions || []);
+      const unloadingPositions = sortedFiniteUnique(summary.unloading_positions || []);
+      const totalLength = Number(summary.track_length || trackLength() || 100) || 100;
+      const continuous = loadingPositions.length > 0
+        && unloadingPositions.length > 0
+        && unloadingPositions[unloadingPositions.length - 1] < loadingPositions[0];
+
+      const fallbackStationAnchor = (position, kind) => {
+        const positions = kind === "loading" ? loadingPositions : unloadingPositions;
+        const normalizedPosition = normalizePosition(position);
+        let index = positions.findIndex((value) => Math.abs(value - normalizedPosition) < 1e-6);
+        if (index < 0) {
+          index = positions.findIndex((value) => value > normalizedPosition);
+        }
+        if (index < 0) {
+          index = positions.length - 1;
+        }
+        const ratio = positions.length <= 1 ? 0.5 : index / Math.max(positions.length - 1, 1);
+        const x = kind === "loading"
+          ? geometry.rightX - (ratio * geometry.straightLength)
+          : geometry.leftX + (ratio * geometry.straightLength);
+        return {
+          x: clamp(x, geometry.leftX + 34, geometry.rightX - 34),
+          y: kind === "loading" ? geometry.loadingY : geometry.unloadingY,
+        };
+      };
+
+      if (!continuous) {
+        return {
+          mode: "fallback",
+          positionToTrackPoint: (position) => positionToPerimeterPoint(position, geometry),
+          positionToStationAnchor: fallbackStationAnchor,
+        };
+      }
+
+      const unloadingMin = unloadingPositions[0];
+      const unloadingMax = unloadingPositions[unloadingPositions.length - 1];
+      const loadingMin = loadingPositions[0];
+      const loadingMax = loadingPositions[loadingPositions.length - 1];
+      const bottomSpan = Math.max(unloadingMax - unloadingMin, 1e-9);
+      const rightArcSpan = Math.max(loadingMin - unloadingMax, 1e-9);
+      const topSpan = Math.max(loadingMax - loadingMin, 1e-9);
+      const leftArcSpan = Math.max((totalLength - loadingMax) + unloadingMin, 1e-9);
+
+      const pointOnBottom = (ratio) => ({
+        x: geometry.leftX + (ratio * geometry.straightLength),
+        y: geometry.bottomY,
+        angleDeg: 0,
+      });
+      const pointOnTop = (ratio) => ({
+        x: geometry.rightX - (ratio * geometry.straightLength),
+        y: geometry.topY,
+        angleDeg: 180,
+      });
+      const pointOnRightArc = (ratio) => {
+        const theta = (Math.PI / 2) - (ratio * Math.PI);
+        return {
+          x: geometry.rightX + (geometry.radius * Math.cos(theta)),
+          y: geometry.centerY + (geometry.radius * Math.sin(theta)),
+          angleDeg: ((theta - (Math.PI / 2)) * 180) / Math.PI,
+        };
+      };
+      const pointOnLeftArc = (ratio) => {
+        const theta = (Math.PI / 2) - (ratio * Math.PI);
+        return {
+          x: geometry.leftX - (geometry.radius * Math.cos(theta)),
+          y: geometry.centerY + (geometry.radius * Math.sin(theta)),
+          angleDeg: ((Math.PI / 2) + theta) * (180 / Math.PI),
+        };
+      };
+
+      const positionToTrackPoint = (position) => {
+        const normalized = normalizePosition(position);
+        if (normalized >= unloadingMin && normalized <= unloadingMax) {
+          return pointOnBottom((normalized - unloadingMin) / bottomSpan);
+        }
+        if (normalized > unloadingMax && normalized < loadingMin) {
+          return pointOnRightArc((normalized - unloadingMax) / rightArcSpan);
+        }
+        if (normalized >= loadingMin && normalized <= loadingMax) {
+          return pointOnTop((normalized - loadingMin) / topSpan);
+        }
+        const leftDistance = normalized >= loadingMax
+          ? normalized - loadingMax
+          : (totalLength - loadingMax) + normalized;
+        return pointOnLeftArc(leftDistance / leftArcSpan);
+      };
+
+      return {
+        mode: "continuous",
+        loadingPositions,
+        unloadingPositions,
+        positionToTrackPoint,
+        positionToStationAnchor: (position, kind) => {
+          const point = positionToTrackPoint(position);
+          return {
+            x: clamp(point.x, geometry.leftX + 34, geometry.rightX - 34),
+            y: kind === "loading" ? geometry.loadingY : geometry.unloadingY,
+          };
+        },
+      };
+    }
+
+    function positionToTrackPoint(position, geometry = buildTrackGeometry(), summary = currentSummary()) {
+      return buildTrackTopologyMapper(summary, geometry).positionToTrackPoint(position);
+    }
+
+    function positionToStationAnchor(position, kind, geometry = buildTrackGeometry(), summary = currentSummary()) {
+      return buildTrackTopologyMapper(summary, geometry).positionToStationAnchor(position, kind);
+    }
+
     function renderTrack(frame) {
       const svg = dom.trackCanvas;
       const geometry = buildTrackGeometry();
+      const topologyMapper = buildTrackTopologyMapper(currentSummary(), geometry);
       svg.innerHTML = "";
       svg.setAttribute("viewBox", `0 0 ${geometry.width} ${geometry.height}`);
 
@@ -2036,8 +2190,9 @@
 
       const renderStation = (station, kind) => {
         const isLoading = kind === "loading";
-        const trackPoint = positionToTrackPoint(station.position, geometry);
-        const cardX = clamp(trackPoint.x, geometry.leftX + 34, geometry.rightX - 34);
+        const trackPoint = topologyMapper.positionToStationAnchor(station.position, kind);
+        const anchorPoint = topologyMapper.positionToTrackPoint(station.position);
+        const cardX = trackPoint.x;
         const cardY = isLoading ? geometry.loadingY - 24 : geometry.unloadingY - 6;
         const cardCenterY = cardY + 15;
         const toneFill = isLoading ? "#4b9f5f" : "#4d79c7";
@@ -2045,16 +2200,16 @@
         const detail = stationStatusText(station, kind);
 
         svg.appendChild(createSvg("line", {
-          x1: trackPoint.x,
-          y1: trackPoint.y,
+          x1: anchorPoint.x,
+          y1: anchorPoint.y,
           x2: cardX,
           y2: cardCenterY,
           stroke: isLoading ? "rgba(75, 159, 95, 0.34)" : "rgba(77, 121, 199, 0.34)",
           "stroke-width": 2.4,
         }));
         svg.appendChild(createSvg("circle", {
-          cx: trackPoint.x,
-          cy: trackPoint.y,
+          cx: anchorPoint.x,
+          cy: anchorPoint.y,
           r: 4.5,
           fill: toneFill,
           stroke: toneStroke,
@@ -2099,7 +2254,7 @@
       (frame.unloading_stations || []).forEach((station) => renderStation(station, "unloading"));
 
       (frame.vehicles || []).forEach((vehicle) => {
-        const point = positionToTrackPoint(vehicle.position, geometry);
+        const point = topologyMapper.positionToTrackPoint(vehicle.position);
         const color = palette[vehicle.id % palette.length];
         const group = createSvg("g", {
           transform: `translate(${point.x} ${point.y}) rotate(${point.angleDeg})`,
@@ -3004,14 +3159,16 @@
         dom.episodeLibrary.innerHTML = '<div class="empty">还没有保存的 episode。启动 train / test 后，这里会出现可回放记录。</div>';
         return;
       }
+      const activeEpisodeId = activeEpisodeListId();
       dom.episodeLibrary.innerHTML = state.episodes.map((episode) => `
-        <button class="list-row ${state.currentEpisodeId === episode.episode_id ? "active" : ""}" data-episode-id="${escapeHtml(episode.episode_id)}">
+        <button class="list-row ${activeEpisodeId === episode.episode_id ? "active" : ""} ${state.loadingEpisodeId === episode.episode_id ? "loading" : ""}" data-episode-id="${escapeHtml(episode.episode_id)}">
           <strong>${escapeHtml(episode.episode_id)}</strong>
           <div class="chip-row">
             <span class="chip ${episode.kind === "train" ? "alt" : "ok"}">${escapeHtml(episode.kind || "--")}</span>
             <span class="chip ${episode.topology_compatibility?.status === "match" ? "ok" : "warn"}">${escapeHtml(episode.topology_compatibility?.status || "unknown")}</span>
             <span class="chip">seed ${escapeHtml(episode.seed || "--")}</span>
             <span class="chip">done ${escapeHtml(episode.completed_cargos || 0)}</span>
+            ${state.loadingEpisodeId === episode.episode_id ? '<span class="chip alt">loading</span>' : ""}
             ${episode.selected_model_id ? `<span class="chip alt">${escapeHtml(episode.selected_model_id)}</span>` : ""}
           </div>
           <div class="list-meta wrap">${escapeHtml(episode.recorded_topology?.summary_text || episode.topology_compatibility?.recorded_text || episode.topology_compatibility?.summary_line || "--")}</div>
@@ -3055,6 +3212,9 @@
     }
 
     function loadEpisodePayload(payload) {
+      rememberEpisodePayload(payload);
+      state.loadingEpisodeId = null;
+      state.episodeAbortController = null;
       state.episode = payload;
       state.currentEpisodeId = payload?.summary?.episode_id || null;
       state.currentIndex = 0;
@@ -3067,10 +3227,12 @@
     }
 
     async function fetchJson(url, options = {}) {
+      const { signal, ...restOptions } = options;
       const response = await fetch(url, {
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
-        ...options,
+        signal,
+        ...restOptions,
       });
       if (!response.ok) {
         const text = await response.text();
@@ -3165,30 +3327,71 @@
 
     async function loadEpisodeById(episodeId, { auto = false } = {}) {
       if (!episodeId || !state.hasApi) return null;
-      if (episodeId === state.currentEpisodeId && currentFrames().length) {
+      if (episodeId === state.currentEpisodeId && currentFrames().length && !state.loadingEpisodeId) {
         return state.episode;
       }
       if (state.loadingEpisodeId === episodeId && state.episodePromise) {
         return state.episodePromise;
       }
-      if (state.episodePromise && state.loadingEpisodeId && state.loadingEpisodeId !== episodeId) {
-        await state.episodePromise.catch(() => null);
+      const cachedPayload = cachedEpisodePayload(episodeId);
+      const requestToken = ++state.episodeRequestToken;
+      if (state.episodeAbortController) {
+        state.episodeAbortController.abort();
+        state.episodeAbortController = null;
       }
+      state.episodePromise = null;
       stopPlayback();
       state.loadingEpisodeId = episodeId;
+      renderEpisodeLibrary();
+      if (cachedPayload) {
+        try {
+          loadEpisodePayload(cachedPayload);
+          state.loadingEpisodeId = null;
+          state.episodePromise = null;
+          renderEpisodeLibrary();
+          setStatus(`已从本地缓存切换 episode ${episodeId}`, "ok");
+          return cachedPayload;
+        } catch (error) {
+          state.loadingEpisodeId = null;
+          state.episodePromise = null;
+          throw error;
+        }
+      }
+      const controller = new AbortController();
+      state.episodeAbortController = controller;
+      setStatus(`正在加载 episode ${episodeId}`, "warn");
       state.episodePromise = (async () => {
         try {
-          const payload = await fetchJson(`/api/episodes/${encodeURIComponent(episodeId)}`);
+          const payload = await fetchJson(`/api/episodes/${encodeURIComponent(episodeId)}`, {
+            signal: controller.signal,
+          });
+          if (controller.signal.aborted || requestToken !== state.episodeRequestToken) {
+            return null;
+          }
+          rememberEpisodePayload(payload);
           loadEpisodePayload(payload);
+          state.loadingEpisodeId = null;
+          if (!auto) {
+            setStatus(`已加载 episode ${episodeId}`, "ok");
+          }
           return payload;
         } catch (error) {
+          if (error && (error.name === "AbortError" || controller.signal.aborted || requestToken !== state.episodeRequestToken)) {
+            return null;
+          }
           setStatus(`加载 episode 失败: ${error.message}`, "warn");
           if (!auto) {
             console.error(error);
           }
           throw error;
         } finally {
-          state.loadingEpisodeId = null;
+          if (state.episodeAbortController === controller) {
+            state.episodeAbortController = null;
+          }
+          if (requestToken === state.episodeRequestToken && state.loadingEpisodeId === episodeId) {
+            state.loadingEpisodeId = null;
+            renderEpisodeLibrary();
+          }
           state.episodePromise = null;
         }
       })();
