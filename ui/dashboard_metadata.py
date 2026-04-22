@@ -40,6 +40,156 @@ def _resolve_training_stats_path(episode_dir: Optional[Path]) -> Optional[Path]:
     return None
 
 
+def _clone_list(value: Any) -> list[Any]:
+    if isinstance(value, (list, tuple)):
+        return [_json_clone(item) for item in value]
+    return []
+
+
+def _sorted_unique_ints(values: Any) -> list[int]:
+    normalized: list[int] = []
+    if isinstance(values, dict):
+        values = values.keys()
+    if not isinstance(values, (list, tuple, set)):
+        return normalized
+    for value in values:
+        try:
+            normalized.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    return sorted(set(normalized))
+
+
+def _normalized_positions(values: Any) -> list[float]:
+    positions: list[float] = []
+    if not isinstance(values, (list, tuple)):
+        return positions
+    for value in values:
+        try:
+            positions.append(float(value))
+        except (TypeError, ValueError):
+            continue
+    return positions
+
+
+def _frame_positions(frame: Dict[str, Any], key: str) -> list[float]:
+    positions: list[float] = []
+    for item in frame.get(key, []) or []:
+        try:
+            positions.append(float(item.get("position")))
+        except (AttributeError, TypeError, ValueError):
+            continue
+    return positions
+
+
+def _frame_vehicle_ids(frame: Dict[str, Any]) -> list[int]:
+    return _sorted_unique_ints([item.get("id") for item in frame.get("vehicles", []) or []])
+
+
+def _topology_label(vehicle_count: Optional[int], loading_count: Optional[int], unloading_count: Optional[int]) -> str:
+    vehicle_text = "unknown vehicles" if vehicle_count is None else f"{vehicle_count} vehicles"
+    loading_text = "unknown IP" if loading_count is None else f"{loading_count} IP"
+    unloading_text = "unknown OP" if unloading_count is None else f"{unloading_count} OP"
+    return f"{vehicle_text} / {loading_text} / {unloading_text}"
+
+
+def _recorded_topology_from_episode(episode: Dict[str, Any]) -> Dict[str, Any]:
+    summary = episode.get("summary", {}) or {}
+    frames = episode.get("frames", []) or []
+    first_frame = frames[0] if frames else {}
+
+    loading_positions = _normalized_positions(summary.get("loading_positions")) or _frame_positions(first_frame, "loading_stations")
+    unloading_positions = _normalized_positions(summary.get("unloading_positions")) or _frame_positions(first_frame, "unloading_stations")
+    model_vehicle_ids = _sorted_unique_ints((summary.get("model_mapping") or {}).keys())
+    vehicle_ids = _frame_vehicle_ids(first_frame) or model_vehicle_ids
+
+    vehicle_count = len(vehicle_ids) if vehicle_ids else None
+    loading_count = len(loading_positions) if loading_positions else None
+    unloading_count = len(unloading_positions) if unloading_positions else None
+
+    return {
+        "vehicle_ids": vehicle_ids,
+        "vehicle_count": vehicle_count,
+        "loading_positions": loading_positions,
+        "loading_station_count": loading_count,
+        "unloading_positions": unloading_positions,
+        "unloading_station_count": unloading_count,
+        "track_length": summary.get("track_length"),
+        "model_vehicle_ids": model_vehicle_ids,
+        "summary_text": _topology_label(vehicle_count, loading_count, unloading_count),
+    }
+
+
+def _episode_payload_for_summary(summary: Dict[str, Any], episode_path: Path) -> Dict[str, Any]:
+    if not episode_path.exists():
+        return {"summary": _json_clone(summary)}
+
+    try:
+        payload = json.loads(episode_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"summary": _json_clone(summary)}
+
+    merged_summary = _json_clone(payload.get("summary", {}))
+    merged_summary.update(_json_clone(summary))
+    payload["summary"] = merged_summary
+    return payload
+
+
+def _current_workspace_topology(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    vehicle_layout = snapshot.get("vehicle_layout", {}) or {}
+    stations = snapshot.get("stations", {}) or {}
+    vehicle_ids = _sorted_unique_ints(vehicle_layout.get("required_vehicle_ids"))
+    loading_positions = _normalized_positions(stations.get("loading_positions"))
+    unloading_positions = _normalized_positions(stations.get("unloading_positions"))
+    vehicle_count = len(vehicle_ids) if vehicle_ids else snapshot.get("environment", {}).get("max_vehicles")
+    loading_count = len(loading_positions) if loading_positions else None
+    unloading_count = len(unloading_positions) if unloading_positions else None
+    return {
+        "vehicle_ids": vehicle_ids,
+        "vehicle_count": vehicle_count,
+        "loading_positions": loading_positions,
+        "loading_station_count": loading_count,
+        "unloading_positions": unloading_positions,
+        "unloading_station_count": unloading_count,
+        "track_length": snapshot.get("environment", {}).get("track_length"),
+        "summary_text": _topology_label(vehicle_count, loading_count, unloading_count),
+    }
+
+
+def _compare_topologies(recorded: Dict[str, Any], current: Dict[str, Any]) -> Dict[str, Any]:
+    differences: list[str] = []
+    if recorded.get("vehicle_count") != current.get("vehicle_count"):
+        differences.append(
+            f"车辆数 {recorded.get('vehicle_count') or 'unknown'} -> {current.get('vehicle_count') or 'unknown'}"
+        )
+    if recorded.get("loading_station_count") != current.get("loading_station_count"):
+        differences.append(
+            f"上料口 {recorded.get('loading_station_count') or 'unknown'} -> {current.get('loading_station_count') or 'unknown'}"
+        )
+    if recorded.get("unloading_station_count") != current.get("unloading_station_count"):
+        differences.append(
+            f"下料口 {recorded.get('unloading_station_count') or 'unknown'} -> {current.get('unloading_station_count') or 'unknown'}"
+        )
+    if recorded.get("loading_positions") and current.get("loading_positions") and recorded.get("loading_positions") != current.get("loading_positions"):
+        differences.append("上料口位置布局不同")
+    if recorded.get("unloading_positions") and current.get("unloading_positions") and recorded.get("unloading_positions") != current.get("unloading_positions"):
+        differences.append("下料口位置布局不同")
+
+    status = "match" if not differences else "mismatch"
+    return {
+        "status": status,
+        "recorded_text": recorded.get("summary_text") or _topology_label(None, None, None),
+        "current_text": current.get("summary_text") or _topology_label(None, None, None),
+        "summary_line": f"Recorded: {recorded.get('summary_text') or 'unknown'} · Current: {current.get('summary_text') or 'unknown'}",
+        "message": (
+            "历史回放拓扑与当前工作区一致，可直接按当前布局理解回放。"
+            if status == "match"
+            else "历史回放沿用录制当时的拓扑，当前工作区已切换到新的车辆与站点布局。"
+        ),
+        "differences": differences,
+    }
+
+
 @lru_cache(maxsize=1)
 def config_snapshot() -> Dict[str, Any]:
     ppo_defaults = {
@@ -65,6 +215,12 @@ def config_snapshot() -> Dict[str, Any]:
         }
     except ModuleNotFoundError:
         pass
+    vehicle_configs = _clone_list(getattr(config_module, "VEHICLE_CONFIGS", []))
+    loading_station_configs = _clone_list(getattr(config_module, "LOADING_STATION_CONFIGS", []))
+    unloading_station_configs = _clone_list(getattr(config_module, "UNLOADING_STATION_CONFIGS", []))
+    required_vehicle_ids = _sorted_unique_ints([item.get("id") for item in vehicle_configs])
+    if not required_vehicle_ids:
+        required_vehicle_ids = list(range(int(getattr(config_module, "MAX_VEHICLES", 0) or 0)))
     return {
         "source_file": str(Path(config_module.__file__).resolve()),
         "environment": {
@@ -75,16 +231,34 @@ def config_snapshot() -> Dict[str, Any]:
             "safety_distance": config_module.SAFETY_DISTANCE,
             "speed_tolerance": config_module.SPEED_TOLERANCE,
         },
+        "vehicle_layout": {
+            "vehicle_slot_count": config_module.VEHICLE_SLOT_COUNT,
+            "required_vehicle_ids": required_vehicle_ids,
+            "vehicle_configs": vehicle_configs,
+        },
         "stations": {
             "loading_positions": list(config_module.LOADING_POSITIONS),
             "unloading_positions": list(config_module.UNLOADING_POSITIONS),
             "loading_station_slots": config_module.LOADING_STATION_SLOTS,
             "unloading_station_slots": config_module.UNLOADING_STATION_SLOTS,
+            "loading_station_configs": loading_station_configs,
+            "unloading_station_configs": unloading_station_configs,
         },
         "cargo": {
             "arrival_interval_min": config_module.ARRIVAL_INTERVAL_MIN,
             "arrival_interval_max": config_module.ARRIVAL_INTERVAL_MAX,
             "cargo_timeout": config_module.CARGO_TIMEOUT,
+        },
+        "cargo_rules": {
+            "roll_types": [config_module.ROLL_TYPE_LARGE, config_module.ROLL_TYPE_SMALL],
+            "small_roll_diameter_limit": config_module.SMALL_ROLL_DIAMETER_LIMIT,
+            "small_roll_diameter_range": list(config_module.SMALL_ROLL_DIAMETER_RANGE),
+            "large_roll_diameter_range": list(config_module.LARGE_ROLL_DIAMETER_RANGE),
+            "required_slots_rules": {
+                "large_roll": config_module.VEHICLE_SLOT_COUNT,
+                "small_roll_at_or_below_limit": 1,
+                "small_roll_above_limit": config_module.VEHICLE_SLOT_COUNT,
+            },
         },
         "timing": {
             "loading_time": config_module.LOADING_TIME,
@@ -92,6 +266,24 @@ def config_snapshot() -> Dict[str, Any]:
             "episode_duration": config_module.EPISODE_DURATION,
             "high_level_decision_interval": config_module.HIGH_LEVEL_DECISION_INTERVAL,
             "low_level_control_interval": config_module.LOW_LEVEL_CONTROL_INTERVAL,
+        },
+        "routing_rules": {
+            "alternative_unloading_switch_distance": config_module.ALTERNATIVE_UNLOADING_SWITCH_DISTANCE,
+            "loading_station_defaults": [
+                {
+                    "id": station.get("id"),
+                    "paper_type": station.get("paper_type"),
+                    "primary_unloading_station": station.get("primary_unloading_station"),
+                    "alternative_unloading_stations": list(station.get("alternative_unloading_stations", [])),
+                }
+                for station in loading_station_configs
+            ],
+        },
+        "safety_rules": {
+            "action_direction_deadband": config_module.ACTION_DIRECTION_DEADBAND,
+            "min_direction_change_interval_steps": config_module.MIN_DIRECTION_CHANGE_INTERVAL_STEPS,
+            "max_jerk": config_module.MAX_JERK,
+            "safety_projection_eps": config_module.SAFETY_PROJECTION_EPS,
         },
         "rewards": {
             "delivery": config_module.REWARD_DELIVERY,
@@ -131,6 +323,7 @@ def config_snapshot_summary() -> Dict[str, Any]:
     snapshot = config_snapshot()
     learning = snapshot["learning"]
     return {
+        **snapshot,
         "source_file": snapshot["source_file"],
         "track_length": snapshot["environment"]["track_length"],
         "loading_positions": snapshot["stations"]["loading_positions"],
@@ -196,7 +389,7 @@ def build_data_provenance(
     episode_dir: Optional[Path],
     training_stats: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    snapshot = config_snapshot_summary()
+    snapshot = config_snapshot()
     return {
         "kind": "seeded_simulation",
         "description": "数据来源为带 seed 的仿真环境，不依赖外部数据集文件。",
@@ -210,18 +403,21 @@ def build_data_provenance(
             "training_stats_available": bool(training_stats),
         },
         "station_layout": {
-            "loading_positions": snapshot["loading_positions"],
-            "unloading_positions": snapshot["unloading_positions"],
-            "track_length": snapshot["track_length"],
+            "loading_positions": snapshot["stations"]["loading_positions"],
+            "unloading_positions": snapshot["stations"]["unloading_positions"],
+            "track_length": snapshot["environment"]["track_length"],
         },
         "cargo_generation": {
-            "arrival_window_seconds": snapshot["arrival_window"],
-            "cargo_timeout_seconds": snapshot["cargo_timeout"],
+            "arrival_window_seconds": [
+                snapshot["cargo"]["arrival_interval_min"],
+                snapshot["cargo"]["arrival_interval_max"],
+            ],
+            "cargo_timeout_seconds": snapshot["cargo"]["cargo_timeout"],
         },
         "control_timing": {
-            "episode_duration_seconds": snapshot["episode_duration"],
-            "decision_interval_seconds": snapshot["decision_interval"],
-            "control_interval_seconds": snapshot["control_interval"],
+            "episode_duration_seconds": snapshot["timing"]["episode_duration"],
+            "decision_interval_seconds": snapshot["timing"]["high_level_decision_interval"],
+            "control_interval_seconds": snapshot["timing"]["low_level_control_interval"],
         },
     }
 
@@ -242,6 +438,9 @@ def enrich_episode_payload(
     stats_path = _resolve_training_stats_path(resolved_episode_dir)
     stats_preview = training_stats_preview(stats_path, workspace)
     snapshot = config_snapshot_summary()
+    recorded_topology = _recorded_topology_from_episode(payload)
+    current_workspace_topology = _current_workspace_topology(snapshot)
+    topology_compatibility = _compare_topologies(recorded_topology, current_workspace_topology)
 
     summary.setdefault("selected_model_id", summary.get("selected_model_id"))
     summary.setdefault("source_model_path", summary.get("source_model_path"))
@@ -262,6 +461,9 @@ def enrich_episode_payload(
             training_stats=stats_preview,
         ),
         "config_snapshot": snapshot,
+        "recorded_topology": recorded_topology,
+        "current_workspace_topology": current_workspace_topology,
+        "topology_compatibility": topology_compatibility,
         "paths": {
             "episode_dir": str(resolved_episode_dir) if resolved_episode_dir is not None else None,
             "episode_dir_display": _display_path(resolved_episode_dir, workspace) if resolved_episode_dir is not None else None,
@@ -289,6 +491,9 @@ def summarize_episode_record(summary: Dict[str, Any], episode_dir: Path, workspa
     selected_model_id = summary.get("selected_model_id")
     report_path = episode_dir / "simulation_report.html"
     episode_path = episode_dir / "episode.json"
+    recorded_topology = _recorded_topology_from_episode(_episode_payload_for_summary(summary, episode_path))
+    current_workspace_topology = _current_workspace_topology(config_snapshot())
+    topology_compatibility = _compare_topologies(recorded_topology, current_workspace_topology)
 
     return {
         "episode_id": summary.get("episode_id") or episode_dir.name,
@@ -312,6 +517,8 @@ def summarize_episode_record(summary: Dict[str, Any], episode_dir: Path, workspa
         "training_stats_path": str(stats_path.resolve()) if stats_path is not None else None,
         "training_stats_path_display": _display_path(stats_path, workspace) if stats_path is not None else None,
         "training_stats_available": bool(stats_preview),
+        "recorded_topology": recorded_topology,
+        "topology_compatibility": topology_compatibility,
         "data_source_label": "Seeded simulation",
     }
 
