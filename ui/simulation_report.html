@@ -168,7 +168,7 @@
 
     .command-grid {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 16px;
     }
 
@@ -1316,9 +1316,9 @@
     <section class="topbar">
       <div class="brand">
         <p class="eyebrow">AGV Workspace</p>
-        <h1 class="headline">AGV 调度工作台</h1>
+        <h1 class="headline">AGV 测试回放工作台</h1>
         <p class="subline">
-          让回放、模型 readiness 与当前工作区规则落在同一张操作台上，优先围绕当前选中的 replay 或 model 做判断。
+          回放数据驱动舞台，模型就绪状态与当前工作区规则仅用于对照和确定性测试发起。
         </p>
       </div>
       <aside class="status-board">
@@ -1332,45 +1332,20 @@
     </section>
 
     <section class="command-grid">
-      <form class="command-panel command-panel--train" id="trainForm">
-        <div class="panel-header-inline">
-          <h2 class="panel-title">训练任务</h2>
-          <button class="secondary inline-button" id="refreshButton" type="button">刷新状态</button>
-        </div>
-        <p class="panel-copy">用当前 `config.py` 触发新的训练批次，回放产物与模型会继续落盘到本地工作区。</p>
-        <div class="form-grid">
-          <div class="field">
-            <label for="trainEpisodes">Episode 数</label>
-            <input id="trainEpisodes" type="number" min="1" step="1" value="5" />
-          </div>
-          <div class="field">
-            <label for="trainSampleInterval">回放采样间隔 (s)</label>
-            <input id="trainSampleInterval" type="number" min="0.5" step="0.5" value="5.0" />
-          </div>
-          <div class="field full">
-            <label>训练说明</label>
-            <div class="empty">episode 时长仍取自当前 `config.py`。页面只负责触发任务与整理产物，不扩展后端未支持的训练参数。</div>
-          </div>
-        </div>
-        <div class="command-actions">
-          <button id="trainButton" type="submit">启动训练</button>
-        </div>
-      </form>
-
       <section class="command-panel command-panel--summary" id="testEntryPanel">
         <div class="panel-header-inline">
-          <h2 class="panel-title">测试入口</h2>
+          <h2 class="panel-title">测试入口 / 模型就绪</h2>
           <button class="secondary inline-button" id="openModelsButton" type="button">打开 Models</button>
         </div>
-        <p class="panel-copy">先在 Models 工作区确认覆盖情况，再直接发起 deterministic test。</p>
+        <p class="panel-copy">先在 Models 中确认覆盖情况，再发起确定性测试。</p>
         <div class="chip-row" id="testEntryChips"></div>
         <div class="empty" id="testEntryStatus">等待模型扫描结果。</div>
       </section>
 
       <section class="command-panel command-panel--jobs">
         <div class="panel-header-inline">
-          <h2 class="panel-title">任务监控</h2>
-          <span class="panel-copy">最近 train / test 任务</span>
+          <h2 class="panel-title">最近测试任务</h2>
+          <span class="panel-copy">仅显示 test 任务</span>
         </div>
         <div class="job-stack" id="jobList"></div>
       </section>
@@ -1382,18 +1357,18 @@
           <aside class="library-dock">
             <div class="dock-head">
               <div>
-                <h2 class="panel-title">回放与模型</h2>
-                <p class="panel-copy" id="libraryCaption">优先从回放库切换历史 episode；每条记录都会标注它与当前工作区的 topology 差异。</p>
+                <h2 class="panel-title">回放库</h2>
+                <p class="panel-copy" id="libraryCaption">在测试回放之间切换，并对比 recorded topology 与当前工作区。</p>
               </div>
               <div class="tab-row">
-                <button class="tab-button active" id="episodesTab" type="button">Episodes</button>
-                <button class="tab-button" id="modelsTab" type="button">Models</button>
+                <button class="tab-button active" id="episodesTab" type="button">回放</button>
+                <button class="tab-button" id="modelsTab" type="button">模型</button>
               </div>
             </div>
             <div class="list-stack" id="episodeLibrary"></div>
             <div class="list-stack hidden" id="modelLibrary"></div>
-            <div class="empty dock-detail" id="librarySelectionMeta">切换左侧条目后，这里会显示当前选中回放或模型的简明信息。</div>
-            <button class="secondary hidden" id="copySelectionButton" type="button">复制当前条目路径</button>
+            <div class="empty dock-detail" id="librarySelectionMeta">在左侧选择条目后，这里会显示简要信息。</div>
+            <button class="secondary hidden" id="copySelectionButton" type="button">复制当前路径</button>
           </aside>
 
           <div class="stage-focus">
@@ -1401,7 +1376,7 @@
               <div class="compat-banner">
                 <span class="compat-pill" id="compatibilityBadge" data-status="mismatch">等待对照</span>
                 <div>
-                  <strong id="compatibilityHeadline">Recorded vs Current</strong>
+                  <strong id="compatibilityHeadline">录制拓扑与当前工作区</strong>
                   <div class="panel-copy" id="compatibilitySummary">尚未载入回放，无法比较历史录制拓扑与当前工作区配置。</div>
                 </div>
               </div>
@@ -1409,7 +1384,7 @@
               <div class="stage-head">
                 <div>
                   <h2 id="episodeTitle">尚未载入 episode</h2>
-                  <div class="panel-copy" id="episodeSubtitle">从左侧库切换已有回放，或先触发新的 train / test。</div>
+                  <div class="panel-copy" id="episodeSubtitle">从左侧切换已有回放，或先在 Models 中完成确定性测试。</div>
                 </div>
                 <div class="meta" id="episodeMeta">等待数据</div>
               </div>
@@ -1419,7 +1394,7 @@
                 <input id="timeSlider" type="range" min="0" max="0" step="1" value="0" />
                 <div class="time-cluster">
                   <div class="time-main" id="timeLabel">00:00:00</div>
-                  <div class="time-sub" id="frameLabel">Frame 0 / 0</div>
+                  <div class="time-sub" id="frameLabel">帧 0 / 0</div>
                 </div>
                 <select id="speedSelect">
                   <option value="0.5">0.5x</option>
@@ -1437,18 +1412,18 @@
 
               <section class="topology-grid topology-grid--triple">
                 <section class="context-panel diff-panel">
-                  <h2 class="panel-title">Topology Diff</h2>
+                  <h2 class="panel-title">拓扑差异</h2>
                   <p class="panel-copy" id="topologyDeltaSummary">等待对照信息。</p>
                   <div class="kv tight" id="topologyDelta"></div>
                 </section>
                 <section class="context-panel">
-                  <h2 class="panel-title">Recorded Replay Data</h2>
-                  <p class="panel-copy" id="recordedTopologySummary">等待从历史 episode 推导 recorded topology。</p>
+                  <h2 class="panel-title">录制回放数据</h2>
+                  <p class="panel-copy" id="recordedTopologySummary">录制拓扑由回放 episode 推导。</p>
                   <div class="kv tight" id="recordedTopology"></div>
                 </section>
                 <section class="context-panel">
-                  <h2 class="panel-title">Current Workspace Config</h2>
-                  <p class="panel-copy" id="currentConfigSummary">等待从当前 config.py 读取工作区布局和规则。</p>
+                  <h2 class="panel-title">当前工作区配置</h2>
+                  <p class="panel-copy" id="currentConfigSummary">当前工作区布局和规则来自 config.py。</p>
                   <div class="kv tight" id="currentConfigList"></div>
                 </section>
               </section>
@@ -1457,7 +1432,7 @@
             <section class="stage-shell hidden" id="modelWorkspace">
               <div class="model-hero">
                 <div>
-                  <h2 id="modelWorkspaceTitle">Selected Model Workspace</h2>
+                  <h2 id="modelWorkspaceTitle">当前模型工作区</h2>
                   <p class="panel-copy" id="modelWorkspaceLead">从左侧模型浏览器选择模型，查看覆盖情况与测试可用性。</p>
                 </div>
                 <div class="meta" id="modelWorkspaceMeta">等待模型</div>
@@ -1477,14 +1452,14 @@
 
               <div class="model-workspace-grid">
                 <div class="data-card">
-                  <strong>当前工作区匹配</strong>
-                  <div class="detail-note">这里专门解释当前配置需要什么、选中模型已经覆盖了什么，以及为什么可以或不能直接发起 test。</div>
+                  <strong>工作区匹配</strong>
+                  <div class="detail-note">这里说明当前工作区需要什么、选中模型已经覆盖了什么，以及为什么可以或不能立即发起测试。</div>
                   <div class="kv tight" id="modelRequirementList"></div>
                 </div>
 
                 <form class="command-panel inline-test-panel" id="testForm">
                   <h2 class="panel-title">测试启动</h2>
-                  <p class="panel-copy">用当前选中模型或其它完整模型直接发起 deterministic test。</p>
+                  <p class="panel-copy">使用当前选中模型或其它完整模型组直接发起确定性测试。</p>
                   <div class="form-grid">
                     <div class="field full">
                       <label for="modelSelect">模型组</label>
@@ -1567,7 +1542,37 @@
   <script>
     window.__SIMULATION_BOOTSTRAP__ = null;
     const query = new URLSearchParams(location.search);
+    const TRACK_DEBUG = query.get("track_debug") === "1";
     const EPISODE_CACHE_LIMIT = 2;
+    const trackShapeConfig = {
+      profile: "natural",
+      profiles: {
+        natural: {
+          sampleCount: 96,
+          debugSampleStride: 12,
+          bottomLine: {
+            start: { x: 0, y: 1 },
+            end: { x: 1, y: 1 },
+          },
+          topLine: {
+            start: { x: 1, y: 0 },
+            end: { x: 0, y: 0 },
+          },
+          rightCurve: {
+            start: { x: 1, y: 1 },
+            control1: { x: 1.18, y: 0.92 },
+            control2: { x: 1.1, y: 0.08 },
+            end: { x: 1, y: 0 },
+          },
+          leftCurve: {
+            start: { x: 0, y: 0 },
+            control1: { x: -0.08, y: 0.12 },
+            control2: { x: -0.18, y: 0.88 },
+            end: { x: 0, y: 1 },
+          },
+        },
+      },
+    };
 
     const state = {
       hasApi: location.protocol.startsWith("http"),
@@ -1602,17 +1607,13 @@
       openModelsButton: document.getElementById("openModelsButton"),
       testEntryChips: document.getElementById("testEntryChips"),
       testEntryStatus: document.getElementById("testEntryStatus"),
-      trainForm: document.getElementById("trainForm"),
       testForm: document.getElementById("testForm"),
-      trainEpisodes: document.getElementById("trainEpisodes"),
-      trainSampleInterval: document.getElementById("trainSampleInterval"),
       modelSelect: document.getElementById("modelSelect"),
       testEpisodes: document.getElementById("testEpisodes"),
       testSeed: document.getElementById("testSeed"),
       testSampleInterval: document.getElementById("testSampleInterval"),
       testDuration: document.getElementById("testDuration"),
       testHint: document.getElementById("testHint"),
-      refreshButton: document.getElementById("refreshButton"),
       jobList: document.getElementById("jobList"),
       episodesTab: document.getElementById("episodesTab"),
       modelsTab: document.getElementById("modelsTab"),
@@ -1811,7 +1812,7 @@
     function compareTopologies(recorded, current) {
       const differences = [];
       if ((recorded?.vehicle_count ?? null) !== (current?.vehicle_count ?? null)) {
-        differences.push(`车辆数 ${recorded?.vehicle_count ?? "unknown"} -> ${current?.vehicle_count ?? "unknown"}`);
+        differences.push(`车辆 ${recorded?.vehicle_count ?? "unknown"} -> ${current?.vehicle_count ?? "unknown"}`);
       }
       if ((recorded?.loading_station_count ?? null) !== (current?.loading_station_count ?? null)) {
         differences.push(`上料口 ${recorded?.loading_station_count ?? "unknown"} -> ${current?.loading_station_count ?? "unknown"}`);
@@ -1820,20 +1821,20 @@
         differences.push(`下料口 ${recorded?.unloading_station_count ?? "unknown"} -> ${current?.unloading_station_count ?? "unknown"}`);
       }
       if ((recorded?.loading_positions || []).length && (current?.loading_positions || []).length && JSON.stringify(recorded.loading_positions) !== JSON.stringify(current.loading_positions)) {
-        differences.push("上料口位置布局不同");
+        differences.push("上料位置不同");
       }
       if ((recorded?.unloading_positions || []).length && (current?.unloading_positions || []).length && JSON.stringify(recorded.unloading_positions) !== JSON.stringify(current.unloading_positions)) {
-        differences.push("下料口位置布局不同");
+        differences.push("下料位置不同");
       }
       const status = differences.length ? "mismatch" : "match";
       return {
         status,
         recorded_text: topologyText(recorded),
         current_text: topologyText(current),
-        summary_line: `Recorded: ${topologyText(recorded)} · Current: ${topologyText(current)}`,
+        summary_line: `录制: ${topologyText(recorded)} · 当前: ${topologyText(current)}`,
         message: status === "match"
-          ? "历史回放与当前工作区使用同一套车辆和站点拓扑。"
-          : "历史回放仍按录制时拓扑解释；当前工作区配置只用于 rerun today 和模型完整性判断。",
+          ? "Recorded 回放与当前工作区使用同一套拓扑。"
+          : "Recorded 回放始终为准；当前工作区只用于 rerun today 和就绪检查。",
         differences,
       };
     }
@@ -1911,18 +1912,168 @@
       return [...new Set(values.map((value) => Number(value)).filter((value) => Number.isFinite(value)))].sort((a, b) => a - b);
     }
 
+    function lerp(start, end, ratio) {
+      return start + ((end - start) * ratio);
+    }
+
+    function lerpPoint(start, end, ratio) {
+      return {
+        x: lerp(start.x, end.x, ratio),
+        y: lerp(start.y, end.y, ratio),
+      };
+    }
+
+    function distanceBetween(start, end) {
+      return Math.hypot(end.x - start.x, end.y - start.y);
+    }
+
+    function angleBetween(start, end) {
+      return (Math.atan2(end.y - start.y, end.x - start.x) * 180) / Math.PI;
+    }
+
+    function cubicBezierPoint(start, control1, control2, end, t) {
+      const mt = 1 - t;
+      const mt2 = mt * mt;
+      const t2 = t * t;
+      return {
+        x: (mt2 * mt * start.x) + (3 * mt2 * t * control1.x) + (3 * mt * t2 * control2.x) + (t2 * t * end.x),
+        y: (mt2 * mt * start.y) + (3 * mt2 * t * control1.y) + (3 * mt * t2 * control2.y) + (t2 * t * end.y),
+      };
+    }
+
+    function cubicBezierTangent(start, control1, control2, end, t) {
+      const mt = 1 - t;
+      return {
+        x: (3 * mt * mt * (control1.x - start.x)) + (6 * mt * t * (control2.x - control1.x)) + (3 * t * t * (end.x - control2.x)),
+        y: (3 * mt * mt * (control1.y - start.y)) + (6 * mt * t * (control2.y - control1.y)) + (3 * t * t * (end.y - control2.y)),
+      };
+    }
+
+    function resolveTrackProfile() {
+      return trackShapeConfig.profiles[trackShapeConfig.profile] || trackShapeConfig.profiles.natural;
+    }
+
+    function resolveNormalizedTrackPoint(point, leftX, rightX, topY, bottomY) {
+      return {
+        x: leftX + ((rightX - leftX) * Number(point.x || 0)),
+        y: topY + ((bottomY - topY) * Number(point.y || 0)),
+      };
+    }
+
+    function buildBezierLookup(start, control1, control2, end, sampleCount = 96) {
+      const safeSamples = Math.max(24, Number(sampleCount) || 96);
+      const samples = [{ t: 0, point: { ...start }, length: 0 }];
+      let previous = start;
+      let totalLength = 0;
+      for (let index = 1; index <= safeSamples; index += 1) {
+        const t = index / safeSamples;
+        const point = cubicBezierPoint(start, control1, control2, end, t);
+        totalLength += distanceBetween(previous, point);
+        samples.push({ t, point, length: totalLength });
+        previous = point;
+      }
+      return {
+        start,
+        control1,
+        control2,
+        end,
+        samples,
+        totalLength,
+      };
+    }
+
+    function pointOnLineSegment(start, end, ratio) {
+      const safeRatio = clamp(ratio, 0, 1);
+      const point = lerpPoint(start, end, safeRatio);
+      return {
+        x: point.x,
+        y: point.y,
+        angleDeg: angleBetween(start, end),
+      };
+    }
+
+    function pointOnBezierLookup(lookup, ratio) {
+      const safeRatio = clamp(ratio, 0, 1);
+      if (!lookup || !lookup.samples?.length || lookup.totalLength <= 0) {
+        return {
+          x: lookup?.start?.x ?? 0,
+          y: lookup?.start?.y ?? 0,
+          angleDeg: 0,
+        };
+      }
+      const targetLength = safeRatio * lookup.totalLength;
+      let upperIndex = lookup.samples.findIndex((sample) => sample.length >= targetLength);
+      if (upperIndex < 0) {
+        upperIndex = lookup.samples.length - 1;
+      }
+      const upper = lookup.samples[upperIndex];
+      const lower = lookup.samples[Math.max(upperIndex - 1, 0)];
+      const span = Math.max(upper.length - lower.length, 1e-9);
+      const localRatio = clamp((targetLength - lower.length) / span, 0, 1);
+      const t = lerp(lower.t, upper.t, localRatio);
+      const point = cubicBezierPoint(lookup.start, lookup.control1, lookup.control2, lookup.end, t);
+      const tangent = cubicBezierTangent(lookup.start, lookup.control1, lookup.control2, lookup.end, t);
+      return {
+        x: point.x,
+        y: point.y,
+        angleDeg: (Math.atan2(tangent.y, tangent.x) * 180) / Math.PI,
+      };
+    }
+
     function buildTrackGeometry() {
       const width = 1240;
       const height = 540;
       const leftX = 170;
       const rightX = 1070;
       const centerX = (leftX + rightX) / 2;
-      const radius = 110;
-      const centerY = 270;
-      const topY = centerY - radius;
-      const bottomY = centerY + radius;
+      const topY = 160;
+      const bottomY = 380;
+      const centerY = (topY + bottomY) / 2;
       const straightLength = rightX - leftX;
-      const halfStraight = straightLength / 2;
+      const profile = resolveTrackProfile();
+      const resolvePoint = (point) => resolveNormalizedTrackPoint(point, leftX, rightX, topY, bottomY);
+      const segments = {
+        bottomLine: {
+          start: resolvePoint(profile.bottomLine.start),
+          end: resolvePoint(profile.bottomLine.end),
+        },
+        rightCurve: {
+          start: resolvePoint(profile.rightCurve.start),
+          control1: resolvePoint(profile.rightCurve.control1),
+          control2: resolvePoint(profile.rightCurve.control2),
+          end: resolvePoint(profile.rightCurve.end),
+        },
+        topLine: {
+          start: resolvePoint(profile.topLine.start),
+          end: resolvePoint(profile.topLine.end),
+        },
+        leftCurve: {
+          start: resolvePoint(profile.leftCurve.start),
+          control1: resolvePoint(profile.leftCurve.control1),
+          control2: resolvePoint(profile.leftCurve.control2),
+          end: resolvePoint(profile.leftCurve.end),
+        },
+      };
+      segments.rightLookup = buildBezierLookup(
+        segments.rightCurve.start,
+        segments.rightCurve.control1,
+        segments.rightCurve.control2,
+        segments.rightCurve.end,
+        profile.sampleCount,
+      );
+      segments.leftLookup = buildBezierLookup(
+        segments.leftCurve.start,
+        segments.leftCurve.control1,
+        segments.leftCurve.control2,
+        segments.leftCurve.end,
+        profile.sampleCount,
+      );
+      const segmentLengths = {
+        bottom: distanceBetween(segments.bottomLine.start, segments.bottomLine.end),
+        right: segments.rightLookup.totalLength,
+        top: distanceBetween(segments.topLine.start, segments.topLine.end),
+        left: segments.leftLookup.totalLength,
+      };
       return {
         width,
         height,
@@ -1930,12 +2081,13 @@
         rightX,
         centerX,
         centerY,
-        radius,
         topY,
         bottomY,
         straightLength,
-        halfStraight,
-        perimeter: (straightLength * 2) + (Math.PI * radius * 2),
+        profile,
+        segments,
+        segmentLengths,
+        pathLength: segmentLengths.bottom + segmentLengths.right + segmentLengths.top + segmentLengths.left,
         loadingY: 84,
         unloadingY: 456,
         loadingTitleY: 48,
@@ -1952,52 +2104,34 @@
     }
 
     function trackPath(geometry) {
+      const { bottomLine, rightCurve, topLine, leftCurve } = geometry.segments;
       return [
-        `M ${geometry.leftX} ${geometry.topY}`,
-        `H ${geometry.rightX}`,
-        `A ${geometry.radius} ${geometry.radius} 0 0 1 ${geometry.rightX} ${geometry.bottomY}`,
-        `H ${geometry.leftX}`,
-        `A ${geometry.radius} ${geometry.radius} 0 0 1 ${geometry.leftX} ${geometry.topY}`,
+        `M ${bottomLine.start.x} ${bottomLine.start.y}`,
+        `L ${bottomLine.end.x} ${bottomLine.end.y}`,
+        `C ${rightCurve.control1.x} ${rightCurve.control1.y} ${rightCurve.control2.x} ${rightCurve.control2.y} ${rightCurve.end.x} ${rightCurve.end.y}`,
+        `L ${topLine.end.x} ${topLine.end.y}`,
+        `C ${leftCurve.control1.x} ${leftCurve.control1.y} ${leftCurve.control2.x} ${leftCurve.control2.y} ${leftCurve.end.x} ${leftCurve.end.y}`,
       ].join(" ");
     }
 
     function positionToPerimeterPoint(position, geometry = buildTrackGeometry()) {
       const length = trackLength();
       const distance = length > 0
-        ? (normalizePosition(position) / length) * geometry.perimeter
+        ? (normalizePosition(position) / length) * geometry.pathLength
         : 0;
-      const firstStraight = geometry.halfStraight;
-      const firstArcEnd = firstStraight + (Math.PI * geometry.radius);
-      const bottomStraightEnd = firstArcEnd + geometry.straightLength;
-      const secondArcEnd = bottomStraightEnd + (Math.PI * geometry.radius);
+      const { bottom, right, top } = geometry.segmentLengths;
+      const { bottomLine, rightLookup, topLine, leftLookup } = geometry.segments;
 
-      if (distance <= firstStraight) {
-        return { x: geometry.centerX + distance, y: geometry.topY, angleDeg: 0 };
+      if (distance <= bottom) {
+        return pointOnLineSegment(bottomLine.start, bottomLine.end, distance / Math.max(bottom, 1e-9));
       }
-      if (distance <= firstArcEnd) {
-        const arcDistance = distance - firstStraight;
-        const theta = (-Math.PI / 2) + (arcDistance / geometry.radius);
-        return {
-          x: geometry.rightX + (geometry.radius * Math.cos(theta)),
-          y: geometry.centerY + (geometry.radius * Math.sin(theta)),
-          angleDeg: ((theta + (Math.PI / 2)) * 180) / Math.PI,
-        };
+      if (distance <= bottom + right) {
+        return pointOnBezierLookup(rightLookup, (distance - bottom) / Math.max(right, 1e-9));
       }
-      if (distance <= bottomStraightEnd) {
-        const bottomDistance = distance - firstArcEnd;
-        return { x: geometry.rightX - bottomDistance, y: geometry.bottomY, angleDeg: 180 };
+      if (distance <= bottom + right + top) {
+        return pointOnLineSegment(topLine.start, topLine.end, (distance - bottom - right) / Math.max(top, 1e-9));
       }
-      if (distance <= secondArcEnd) {
-        const arcDistance = distance - bottomStraightEnd;
-        const theta = (Math.PI / 2) + (arcDistance / geometry.radius);
-        return {
-          x: geometry.leftX + (geometry.radius * Math.cos(theta)),
-          y: geometry.centerY + (geometry.radius * Math.sin(theta)),
-          angleDeg: ((theta + (Math.PI / 2)) * 180) / Math.PI,
-        };
-      }
-      const lastDistance = distance - secondArcEnd;
-      return { x: geometry.leftX + lastDistance, y: geometry.topY, angleDeg: 0 };
+      return pointOnBezierLookup(leftLookup, (distance - bottom - right - top) / Math.max(geometry.segmentLengths.left, 1e-9));
     }
 
     function buildTrackTopologyMapper(summary = currentSummary(), geometry = buildTrackGeometry()) {
@@ -2044,33 +2178,10 @@
       const rightArcSpan = Math.max(loadingMin - unloadingMax, 1e-9);
       const topSpan = Math.max(loadingMax - loadingMin, 1e-9);
       const leftArcSpan = Math.max((totalLength - loadingMax) + unloadingMin, 1e-9);
-
-      const pointOnBottom = (ratio) => ({
-        x: geometry.leftX + (ratio * geometry.straightLength),
-        y: geometry.bottomY,
-        angleDeg: 0,
-      });
-      const pointOnTop = (ratio) => ({
-        x: geometry.rightX - (ratio * geometry.straightLength),
-        y: geometry.topY,
-        angleDeg: 180,
-      });
-      const pointOnRightArc = (ratio) => {
-        const theta = (Math.PI / 2) - (ratio * Math.PI);
-        return {
-          x: geometry.rightX + (geometry.radius * Math.cos(theta)),
-          y: geometry.centerY + (geometry.radius * Math.sin(theta)),
-          angleDeg: ((theta - (Math.PI / 2)) * 180) / Math.PI,
-        };
-      };
-      const pointOnLeftArc = (ratio) => {
-        const theta = (Math.PI / 2) - (ratio * Math.PI);
-        return {
-          x: geometry.leftX - (geometry.radius * Math.cos(theta)),
-          y: geometry.centerY + (geometry.radius * Math.sin(theta)),
-          angleDeg: ((Math.PI / 2) + theta) * (180 / Math.PI),
-        };
-      };
+      const pointOnBottom = (ratio) => pointOnLineSegment(geometry.segments.bottomLine.start, geometry.segments.bottomLine.end, ratio);
+      const pointOnTop = (ratio) => pointOnLineSegment(geometry.segments.topLine.start, geometry.segments.topLine.end, ratio);
+      const pointOnRightArc = (ratio) => pointOnBezierLookup(geometry.segments.rightLookup, ratio);
+      const pointOnLeftArc = (ratio) => pointOnBezierLookup(geometry.segments.leftLookup, ratio);
 
       const positionToTrackPoint = (position) => {
         const normalized = normalizePosition(position);
@@ -2110,6 +2221,71 @@
 
     function positionToStationAnchor(position, kind, geometry = buildTrackGeometry(), summary = currentSummary()) {
       return buildTrackTopologyMapper(summary, geometry).positionToStationAnchor(position, kind);
+    }
+
+    function renderTrackDebug(svg, geometry) {
+      if (!TRACK_DEBUG) return;
+      const group = createSvg("g", { "data-track-debug": "true" });
+      const appendLine = (start, end, color, dash = "8 6") => {
+        group.appendChild(createSvg("line", {
+          x1: start.x,
+          y1: start.y,
+          x2: end.x,
+          y2: end.y,
+          stroke: color,
+          "stroke-width": 1.5,
+          "stroke-dasharray": dash,
+          "stroke-linecap": "round",
+          opacity: 0.9,
+        }));
+      };
+      const appendPoint = (point, color, label, radius = 4) => {
+        group.appendChild(createSvg("circle", {
+          cx: point.x,
+          cy: point.y,
+          r: radius,
+          fill: color,
+          stroke: "white",
+          "stroke-width": 1.1,
+        }));
+        if (label) {
+          const text = createSvg("text", {
+            x: point.x + 8,
+            y: point.y - 8,
+            fill: color,
+            "font-size": 9,
+            "font-family": "Cascadia Mono, Consolas, monospace",
+            "font-weight": 700,
+          });
+          text.textContent = label;
+          group.appendChild(text);
+        }
+      };
+      const { bottomLine, rightCurve, topLine, leftCurve, rightLookup, leftLookup } = geometry.segments;
+      appendLine(rightCurve.start, rightCurve.control1, "#d97706");
+      appendLine(rightCurve.control1, rightCurve.control2, "#d97706");
+      appendLine(rightCurve.control2, rightCurve.end, "#d97706");
+      appendLine(leftCurve.start, leftCurve.control1, "#2563eb");
+      appendLine(leftCurve.control1, leftCurve.control2, "#2563eb");
+      appendLine(leftCurve.control2, leftCurve.end, "#2563eb");
+
+      appendPoint(bottomLine.start, "#475569", "B0");
+      appendPoint(bottomLine.end, "#475569", "B1");
+      appendPoint(topLine.start, "#475569", "T0");
+      appendPoint(topLine.end, "#475569", "T1");
+      appendPoint(rightCurve.control1, "#d97706", "R1", 4.5);
+      appendPoint(rightCurve.control2, "#d97706", "R2", 4.5);
+      appendPoint(leftCurve.control1, "#2563eb", "L1", 4.5);
+      appendPoint(leftCurve.control2, "#2563eb", "L2", 4.5);
+
+      const sampleStride = Math.max(1, Number(geometry.profile.debugSampleStride || 12));
+      [rightLookup, leftLookup].forEach((lookup, curveIndex) => {
+        lookup.samples.forEach((sample, sampleIndex) => {
+          if (sampleIndex === 0 || sampleIndex === lookup.samples.length - 1 || sampleIndex % sampleStride !== 0) return;
+          appendPoint(sample.point, curveIndex === 0 ? "rgba(217, 119, 6, 0.75)" : "rgba(37, 99, 235, 0.75)", "", 2.3);
+        });
+      });
+      svg.appendChild(group);
     }
 
     function renderTrack(frame) {
@@ -2159,6 +2335,7 @@
         "stroke-linecap": "round",
         "stroke-linejoin": "round",
       }));
+      renderTrackDebug(svg, geometry);
       svg.appendChild(createSvg("line", {
         x1: geometry.centerX,
         y1: geometry.topY - 24,
@@ -2185,8 +2362,8 @@
         stroke: "rgba(77, 121, 199, 0.15)",
         "stroke-width": 2,
       }));
-      svg.appendChild(bandLabel("上料口带区", 68, geometry.loadingTitleY, "#2b6137"));
-      svg.appendChild(bandLabel("下料口带区", 68, geometry.unloadingTitleY, "#264f95"));
+      svg.appendChild(bandLabel("Loading band", 68, geometry.loadingTitleY, "#2b6137"));
+      svg.appendChild(bandLabel("Unloading band", 68, geometry.unloadingTitleY, "#264f95"));
 
       const renderStation = (station, kind) => {
         const isLoading = kind === "loading";
@@ -2324,23 +2501,23 @@
       }).join("");
       dom.trackLegend.innerHTML = `
         ${vehicleLegend || '<span class="l-vehicle0">暂无车辆</span>'}
-        <span class="l-loading">上料口锚点</span>
-        <span class="l-unloading">下料口锚点</span>
-        <span class="l-busy">装卸中车辆</span>
+        <span class="l-loading">上料口</span>
+        <span class="l-unloading">下料口</span>
+        <span class="l-busy">忙碌车辆</span>
       `;
     }
 
     function renderMetrics(frame) {
       const system = frame.system || {};
       const metrics = [
-        ["完成货物", system.completed_cargos ?? 0],
+        ["已完成货物", system.completed_cargos ?? 0],
         ["超时货物", system.timed_out_cargos ?? 0],
-        ["平均等待(s)", number(system.avg_wait_time ?? 0, 1)],
-        ["当前货物", system.current_cargos ?? 0],
+        ["平均等待 (s)", number(system.avg_wait_time ?? 0, 1)],
+        ["活跃货物", system.current_cargos ?? 0],
         ["等待货物", system.waiting_cargos ?? 0],
-        ["在车货物", system.on_vehicle_cargos ?? 0],
-        ["告警数", system.safety_warning_count ?? 0],
-        ["碰撞数", system.collision_alert_count ?? 0],
+        ["车载货物", system.on_vehicle_cargos ?? 0],
+        ["安全警告", system.safety_warning_count ?? 0],
+        ["碰撞告警", system.collision_alert_count ?? 0],
       ];
       dom.metricGrid.innerHTML = metrics.map(([label, value]) => `
         <div class="metric">
@@ -2360,13 +2537,13 @@
         <div class="table-shell">
           ${vehicles.map((vehicle) => {
             const slots = (vehicle.slots || []).map((slot) => {
-              if (!slot.occupied) return `S${slot.slot_index + 1}: Empty`;
+              if (!slot.occupied) return `S${slot.slot_index + 1}: 空闲`;
               return `S${slot.slot_index + 1}: C${slot.cargo_id} -> ${escapeHtml(slot.destination_text || "--")}`;
-            }).join(" · ");
+            }).join(" 路 ");
             const operation = vehicle.operation || {};
             const secondary = operation.remaining_time != null
-              ? `${escapeHtml(vehicle.status_text || "Ready")} · 剩余 ${number(operation.remaining_time, 1)}s`
-              : escapeHtml(vehicle.status_text || "Ready");
+              ? `${escapeHtml(vehicle.status_text || "就绪")} · 剩余 ${number(operation.remaining_time, 1)}s`
+              : escapeHtml(vehicle.status_text || "就绪");
             return `
               <div class="table-row">
                 <div>
@@ -2374,8 +2551,8 @@
                   <div class="table-sub">${secondary}</div>
                 </div>
                 <div class="table-sub">位置 <span class="table-code">${number(vehicle.position, 2)}</span></div>
-                <div class="table-sub">速度 <span class="table-code">${number(vehicle.velocity, 2)}</span> · 载货 <span class="table-code">${vehicle.slot_count ?? 0}</span></div>
-                <div class="table-sub">${slots || "无工位信息"}</div>
+                <div class="table-sub">速度 <span class="table-code">${number(vehicle.velocity, 2)}</span> · 槽位 <span class="table-code">${vehicle.slot_count ?? 0}</span></div>
+                <div class="table-sub">${slots || "暂无槽位详情"}</div>
               </div>
             `;
           }).join("")}
@@ -2393,11 +2570,11 @@
         <div class="table-shell">
           ${stations.map((station) => {
             const slots = (station.slots || []).map((slot) => {
-              if (!slot.occupied) return `S${slot.slot_index + 1}: Empty`;
+              if (!slot.occupied) return `S${slot.slot_index + 1}: 空闲`;
               const assigned = slot.assigned_vehicle != null ? ` -> V${slot.assigned_vehicle}` : "";
               const timeout = slot.is_timeout ? " · Timeout" : "";
               return `S${slot.slot_index + 1}: C${slot.cargo_id}${assigned}${timeout}`;
-            }).join(" · ");
+            }).join(" 路 ");
             return `
               <div class="table-row">
                 <div>
@@ -2405,8 +2582,8 @@
                   <div class="table-sub">占用 ${station.occupied_slots ?? 0}</div>
                 </div>
                 <div class="table-sub">位置 <span class="table-code">${number(station.position, 2)}</span></div>
-                <div class="table-sub">${(station.slots || []).length} 工位</div>
-                <div class="table-sub">${slots || "无工位信息"}</div>
+                <div class="table-sub">${(station.slots || []).length} 槽位</div>
+                <div class="table-sub">${slots || "暂无槽位详情"}</div>
               </div>
             `;
           }).join("")}
@@ -2426,11 +2603,11 @@
             <div class="table-row">
               <div>
                 <div class="table-title">OP${station.id}</div>
-                <div class="table-sub">${escapeHtml(station.mode || "mode unknown")}</div>
+                <div class="table-sub">${escapeHtml(station.mode || "模式未知")}</div>
               </div>
               <div class="table-sub">位置 <span class="table-code">${number(station.position, 2)}</span></div>
               <div class="table-sub">接收策略</div>
-              <div class="table-sub">${escapeHtml(station.description || "Unlimited receiving")}</div>
+              <div class="table-sub">${escapeHtml(station.description || "无限接收")}</div>
             </div>
           `).join("")}
         </div>
@@ -2440,7 +2617,7 @@
     function renderWaitingCargos(frame) {
       const cargos = frame.waiting_cargos || [];
       if (!cargos.length) {
-        dom.waitingCargoList.innerHTML = '<div class="empty">当前没有等待中的货物。</div>';
+        dom.waitingCargoList.innerHTML = '<div class="empty">当前帧没有等待中的货物。</div>';
         return;
       }
       dom.waitingCargoList.innerHTML = cargos.map((cargo) => `
@@ -2448,13 +2625,13 @@
           <strong>C${cargo.id}</strong>
           <div class="chip-row">
             <span class="chip">${escapeHtml(cargo.destination_text || "--")}</span>
-            ${cargo.is_timeout ? '<span class="chip warn">Timeout</span>' : '<span class="chip ok">Waiting</span>'}
+            ${cargo.is_timeout ? '<span class="chip warn">超时</span>' : '<span class="chip ok">等待中</span>'}
             ${cargo.assigned_vehicle != null ? `<span class="chip alt">V${cargo.assigned_vehicle}</span>` : ""}
             ${cargo.paper_type ? `<span class="chip alt">${escapeHtml(cargo.paper_type)}</span>` : ""}
             ${cargo.required_slots != null ? `<span class="chip">槽位 ${escapeHtml(cargo.required_slots)}</span>` : ""}
           </div>
           <div class="kv">
-            <div>上料口: <code>IP${cargo.loading_station}</code> / 工位 <code>${(cargo.loading_slot ?? 0) + 1}</code></div>
+            <div>上料口: <code>IP${cargo.loading_station}</code> / 槽位 <code>${(cargo.loading_slot ?? 0) + 1}</code></div>
             <div>等待时间: <code>${number(cargo.wait_time, 1)}s</code></div>
             ${cargo.primary_unloading_station != null ? `<div>主下料口: <code>OP${cargo.primary_unloading_station}</code></div>` : ""}
           </div>
@@ -2465,7 +2642,7 @@
     function renderActiveCargos(frame) {
       const cargos = frame.active_cargos || [];
       if (!cargos.length) {
-        dom.activeCargoList.innerHTML = '<div class="empty">当前没有活跃货物。</div>';
+        dom.activeCargoList.innerHTML = '<div class="empty">当前帧没有活跃货物。</div>';
         return;
       }
       dom.activeCargoList.innerHTML = cargos.map((cargo) => {
@@ -2479,8 +2656,8 @@
           <div class="data-card compact">
             <strong>C${cargo.id}</strong>
             <div class="chip-row">
-              <span class="chip">${escapeHtml(cargo.destination_text || "--")}</span>
-              ${cargo.is_timeout ? '<span class="chip warn">Timeout</span>' : ""}
+            <span class="chip">${escapeHtml(cargo.destination_text || "--")}</span>
+              ${cargo.is_timeout ? '<span class="chip warn">超时</span>' : ""}
               ${cargo.target_unloading_station != null ? `<span class="chip alt">OP${cargo.target_unloading_station}</span>` : ""}
               ${cargo.paper_type ? `<span class="chip alt">${escapeHtml(cargo.paper_type)}</span>` : ""}
               ${cargo.required_slots != null ? `<span class="chip">槽位 ${escapeHtml(cargo.required_slots)}</span>` : ""}
@@ -2603,7 +2780,7 @@
         dom.librarySelectionMeta.innerHTML = `
           <strong>当前选中模型</strong>
           <div class="kv tight">
-            <div>状态: <code>${model.complete_for_current_config ? "usable" : "blocked"}</code></div>
+            <div>状态: <code>${model.complete_for_current_config ? "可用" : "阻塞"}</code></div>
             <div>更新时间: <code>${escapeHtml(model.updated_at || "--")}</code></div>
             <div>已覆盖车辆: <code>${escapeHtml(idsText(model.vehicle_ids || []))}</code></div>
             <div>缺失车辆: <code>${escapeHtml(idsText(model.missing_vehicle_ids || []))}</code></div>
@@ -2616,9 +2793,10 @@
         return;
       }
 
-      const episode = state.episodes.find((item) => item.episode_id === state.currentEpisodeId);
+      const visibleEpisodes = state.episodes.filter((item) => item.kind === "test");
+      const episode = visibleEpisodes.find((item) => item.episode_id === state.currentEpisodeId);
       if (!episode) {
-        dom.librarySelectionMeta.textContent = "切换左侧条目后，这里会显示当前选中回放的简明信息。";
+        dom.librarySelectionMeta.textContent = "在左侧选择条目后，这里会显示简要回放信息。";
         dom.copySelectionButton.classList.add("hidden");
         dom.copySelectionButton.dataset.copy = "";
         return;
@@ -2650,19 +2828,19 @@
       `;
       dom.testEntryStatus.textContent = selectedModel
         ? (selectedModel.completeness_reason || "当前模型状态可直接用于测试。")
-        : (state.models.length ? "从 Models 工作区选择一个模型以查看覆盖情况。" : "当前还没有可识别的模型组。");
+        : (state.models.length ? "从 Models 中选择一个模型以查看覆盖情况。" : "当前还没有可识别的模型组。");
     }
 
     function renderModelWorkspace() {
       const selectedModel = currentSelectedModel();
       if (!selectedModel) {
-        dom.modelWorkspaceTitle.textContent = "Selected Model Workspace";
+        dom.modelWorkspaceTitle.textContent = "当前模型工作区";
         dom.modelWorkspaceLead.textContent = "从左侧模型浏览器选择模型，查看覆盖情况与测试可用性。";
         dom.modelWorkspaceMeta.textContent = "等待模型";
         dom.modelCoverageChips.innerHTML = "";
         dom.modelWorkspaceList.innerHTML = "<div>当前没有可用模型。</div>";
         dom.modelPathList.innerHTML = "<div>没有模型路径可显示。</div>";
-        dom.modelRequirementList.innerHTML = "<div>等待模型目录扫描结果。</div>";
+        dom.modelRequirementList.innerHTML = "<div>等待模型扫描结果。</div>";
         return;
       }
 
@@ -2673,21 +2851,21 @@
 
       dom.modelWorkspaceTitle.textContent = selectedModel.id;
       dom.modelWorkspaceLead.textContent = selectedModel.complete_for_current_config
-        ? "这个模型组已覆盖当前工作区要求，可直接从右侧表单发起 deterministic test。"
-        : "这个模型组暂未覆盖当前工作区要求，当前只能查看覆盖情况与阻塞原因。";
+        ? "这个模型组已覆盖当前工作区要求，可直接发起确定性测试。"
+        : "这个模型组暂未覆盖当前工作区要求，请查看覆盖情况与阻塞原因。";
       dom.modelWorkspaceMeta.innerHTML = `
-        usable: ${selectedModel.complete_for_current_config ? "yes" : "no"}<br/>
-        selected: ${escapeHtml(selectedSummary.selected_model_id || selectedModel.id)}<br/>
-        updated: ${escapeHtml(selectedModel.updated_at || "--")}
+        可用: ${selectedModel.complete_for_current_config ? "是" : "否"}<br/>
+        选中: ${escapeHtml(selectedSummary.selected_model_id || selectedModel.id)}<br/>
+        更新时间: ${escapeHtml(selectedModel.updated_at || "--")}
       `;
       dom.modelCoverageChips.innerHTML = `
-        <span class="chip alt">found ${escapeHtml(foundVehicleIds)}</span>
-        <span class="chip">required ${escapeHtml(requiredVehicleIds)}</span>
-        <span class="chip ${selectedModel.complete_for_current_config ? "ok" : "warn"}">${selectedModel.complete_for_current_config ? "usable for current config" : "blocked by missing vehicles"}</span>
+        <span class="chip alt">已发现 ${escapeHtml(foundVehicleIds)}</span>
+        <span class="chip">必需 ${escapeHtml(requiredVehicleIds)}</span>
+        <span class="chip ${selectedModel.complete_for_current_config ? "ok" : "warn"}">${selectedModel.complete_for_current_config ? "当前配置可用" : "缺少车辆导致阻塞"}</span>
       `;
       dom.modelWorkspaceList.innerHTML = `
-        <div>当前配置要求: <code>${escapeHtml(requiredVehicleIds)}</code></div>
-        <div>已覆盖车辆: <code>${escapeHtml(foundVehicleIds)}</code></div>
+        <div>当前工作区要求: <code>${escapeHtml(requiredVehicleIds)}</code></div>
+        <div>已发现车辆: <code>${escapeHtml(foundVehicleIds)}</code></div>
         <div>缺失车辆: <code>${escapeHtml(missingVehicleIds)}</code></div>
         <div>阻塞原因: <code>${escapeHtml(selectedModel.completeness_reason || "--")}</code></div>
       `;
@@ -2696,34 +2874,34 @@
         : "<div>当前模型组没有可显示的路径。</div>";
       dom.modelRequirementList.innerHTML = `
         <div>当前工作区: <code>${escapeHtml(currentWorkspaceTopology().summary_text || topologyText(currentWorkspaceTopology()))}</code></div>
-        <div>可直接测试: <code>${selectedModel.complete_for_current_config ? "yes" : "no"}</code></div>
-        <div>模型映射来源: <code>${escapeHtml(selectedSummary.selected_model_id || "--")}</code></div>
-        <div>测试状态: <code>${escapeHtml(selectedModel.complete_for_current_config ? "可以直接发起 deterministic test" : "需要先补齐缺失车辆模型")}</code></div>
+        <div>可直接测试: <code>${selectedModel.complete_for_current_config ? "是" : "否"}</code></div>
+        <div>模型来源: <code>${escapeHtml(selectedSummary.selected_model_id || "--")}</code></div>
+        <div>测试状态: <code>${escapeHtml(selectedModel.complete_for_current_config ? "可以直接发起确定性测试" : "请先补齐缺失车辆模型")}</code></div>
       `;
     }
 
     function renderModelSidePanel() {
       const selectedModel = currentSelectedModel();
       const currentTopology = currentWorkspaceTopology();
-      const recentJobs = state.jobs.slice(0, 3);
+      const recentJobs = state.jobs.filter((job) => job.kind === "test").slice(0, 3);
 
       dom.modelSideList.innerHTML = `
         <div class="data-card compact">
           <strong>当前工作区要求</strong>
           <div class="kv tight">
-            <div>workspace: <code>${escapeHtml(currentTopology.summary_text || topologyText(currentTopology))}</code></div>
-            <div>required vehicle ids: <code>${escapeHtml(idsText(currentTopology.vehicle_ids || []))}</code></div>
+            <div>工作区: <code>${escapeHtml(currentTopology.summary_text || topologyText(currentTopology))}</code></div>
+            <div>必需车辆 ID: <code>${escapeHtml(idsText(currentTopology.vehicle_ids || []))}</code></div>
             <div>完整模型组: <code>${state.models.filter((model) => model.complete_for_current_config).length}</code></div>
             ${selectedModel ? `<div>当前模型: <code>${escapeHtml(selectedModel.id)}</code></div>` : ""}
           </div>
         </div>
         <div class="data-card compact">
-          <strong>最近任务 / 测试</strong>
+          <strong>最近测试任务</strong>
           ${recentJobs.length ? recentJobs.map((job) => `
             <div class="activity-item">
               <div class="chip-row">
                 <span class="chip ${jobStatusClass(job.status)}">${escapeHtml(job.status)}</span>
-                <span class="chip">${escapeHtml(job.kind)}</span>
+                <span class="chip">${escapeHtml(job.kind === "test" ? "测试" : job.kind)}</span>
               </div>
               <div class="table-title">${escapeHtml(job.id)}</div>
               <div class="table-sub">${escapeHtml(job.message || "")}</div>
@@ -2742,29 +2920,29 @@
 
       if (waiting.length) {
         groups.push({
-          title: `等待货物 ${waiting.length}`,
+          title: `Waiting cargos ${waiting.length}`,
           items: waiting.slice(0, 3).map((cargo) => `
             <div class="activity-item">
               <div class="table-title">C${cargo.id}</div>
-              <div class="table-sub">IP${cargo.loading_station} · 等待 ${number(cargo.wait_time, 1)}s</div>
+              <div class="table-sub">IP${cargo.loading_station} · waiting ${number(cargo.wait_time, 1)}s</div>
             </div>
           `).join(""),
         });
       }
       if (active.length) {
         groups.push({
-          title: `活跃货物 ${active.length}`,
+          title: `Active cargos ${active.length}`,
           items: active.slice(0, 3).map((cargo) => `
             <div class="activity-item">
               <div class="table-title">C${cargo.id}</div>
-              <div class="table-sub">${escapeHtml(cargo.destination_text || "--")} · 目标 ${cargo.target_unloading_station != null ? `OP${cargo.target_unloading_station}` : "--"}</div>
+              <div class="table-sub">${escapeHtml(cargo.destination_text || "--")} · target ${cargo.target_unloading_station != null ? `OP${cargo.target_unloading_station}` : "--"}</div>
             </div>
           `).join(""),
         });
       }
       if (completed.length) {
         groups.push({
-          title: `最近完成 ${completed.length}`,
+          title: `Recently completed ${completed.length}`,
           items: completed.slice(-3).reverse().map((cargo) => `
             <div class="activity-item">
               <div class="table-title">C${cargo.id}</div>
@@ -2775,7 +2953,7 @@
       }
       if (alerts.length) {
         groups.push({
-          title: `最近告警 ${alerts.length}`,
+          title: `Recent alerts ${alerts.length}`,
           items: alerts.slice(-3).reverse().map((alert) => `
             <div class="activity-item">
               <div class="table-title">${escapeHtml(String(alert.level || "").toUpperCase())}</div>
@@ -2786,7 +2964,7 @@
       }
 
       if (!groups.length) {
-        dom.activityList.innerHTML = '<div class="empty">当前无活动事件。等待货物、活跃货物、最近完成与告警都会在这里合并显示。</div>';
+        dom.activityList.innerHTML = '<div class="empty">No activity yet. Waiting cargos, active cargos, recent completions, and alerts will appear here.</div>';
         return;
       }
 
@@ -2805,8 +2983,8 @@
       document.querySelectorAll(".episodes-only").forEach((node) => node.classList.toggle("hidden", modelsMode));
       document.querySelectorAll(".models-only").forEach((node) => node.classList.toggle("hidden", !modelsMode));
       dom.topologyInline.textContent = modelsMode
-        ? "当前视图: Models · readiness / test workspace"
-        : "当前视图: Episodes · replay workspace";
+        ? "当前视图: Models 就绪 / 测试工作区"
+        : "当前视图: 回放工作区";
       renderLibrarySelectionDetail();
       renderTestEntryPanel();
       if (modelsMode) {
@@ -2819,13 +2997,13 @@
       const recorded = currentRecordedTopology();
       const current = currentWorkspaceTopology();
       const compatibility = currentTopologyCompatibility();
-      const statusText = compatibility.status === "match" ? "MATCH" : "MISMATCH";
+      const statusText = compatibility.status === "match" ? "匹配" : "不匹配";
       const mismatchHeadline = compatibility.status === "match"
         ? "Recorded 拓扑与当前工作区一致"
         : "Recorded 拓扑与当前工作区不一致";
       const primaryDelta = compatibility.differences?.length
-        ? compatibility.differences.slice(0, 2).join("；")
-        : "当前回放可以直接按当前工作区理解。";
+        ? compatibility.differences.slice(0, 2).join(" · ")
+        : "当前回放可以直接按录制拓扑阅读。";
 
       dom.compatibilityBadge.dataset.status = compatibility.status || "mismatch";
       dom.compatibilityBadge.textContent = statusText;
@@ -2845,20 +3023,20 @@
         ? "舞台与右侧详情可直接按这一套 recorded 拓扑阅读。"
         : "舞台与右侧详情始终按 recorded 拓扑渲染，不会被当前 config.py 覆盖。";
       dom.recordedTopology.innerHTML = `
-        <div>Recorded summary: <code>${escapeHtml(recorded.summary_text || topologyText(recorded))}</code></div>
-        <div>vehicle ids: <code>${escapeHtml(idsText(recorded.vehicle_ids))}</code></div>
-        <div>loading_positions: <code>${escapeHtml(positionsText(recorded.loading_positions))}</code></div>
-        <div>unloading_positions: <code>${escapeHtml(positionsText(recorded.unloading_positions))}</code></div>
-        <div>model mapping ids: <code>${escapeHtml(idsText(recorded.model_vehicle_ids))}</code></div>
+        <div>Recorded 摘要: <code>${escapeHtml(recorded.summary_text || topologyText(recorded))}</code></div>
+        <div>车辆 ID: <code>${escapeHtml(idsText(recorded.vehicle_ids))}</code></div>
+        <div>上料位置: <code>${escapeHtml(positionsText(recorded.loading_positions))}</code></div>
+        <div>下料位置: <code>${escapeHtml(positionsText(recorded.unloading_positions))}</code></div>
+        <div>模型映射 ID: <code>${escapeHtml(idsText(recorded.model_vehicle_ids))}</code></div>
       `;
 
-      dom.currentConfigSummary.textContent = "当前 config.py 只用于 rerun today、模型完整性判断和规则说明。";
+      dom.currentConfigSummary.textContent = "当前 config.py 仅用于 rerun today、模型就绪判断和规则说明。";
       dom.currentConfigList.innerHTML = `
-        <div>Current summary: <code>${escapeHtml(current.summary_text || topologyText(current))}</code></div>
-        <div>required vehicle ids: <code>${escapeHtml(idsText(current.vehicle_ids))}</code></div>
-        <div>loading_positions: <code>${escapeHtml(positionsText(current.loading_positions))}</code></div>
-        <div>unloading_positions: <code>${escapeHtml(positionsText(current.unloading_positions))}</code></div>
-        <div>track_length: <code>${number(current.track_length, 1)}</code></div>
+        <div>Current 摘要: <code>${escapeHtml(current.summary_text || topologyText(current))}</code></div>
+        <div>必需车辆 ID: <code>${escapeHtml(idsText(current.vehicle_ids))}</code></div>
+        <div>上料位置: <code>${escapeHtml(positionsText(current.loading_positions))}</code></div>
+        <div>下料位置: <code>${escapeHtml(positionsText(current.unloading_positions))}</code></div>
+        <div>轨道长度: <code>${number(current.track_length, 1)}</code></div>
       `;
     }
 
@@ -2879,13 +3057,13 @@
         ? loadingDefaults.map((item) => {
           const alts = Array.isArray(item.alternative_unloading_stations) && item.alternative_unloading_stations.length
             ? item.alternative_unloading_stations.map((id) => `OP${id}`).join(", ")
-            : "none";
-          return `<div>IP${item.id}: <code>${escapeHtml(item.paper_type || "--")}</code> -> 主 <code>OP${item.primary_unloading_station ?? "--"}</code> / 备选 <code>${escapeHtml(alts)}</code></div>`;
+            : "无";
+          return `<div>IP${item.id}: <code>${escapeHtml(item.paper_type || "--")}</code> -> 主 <code>OP${item.primary_unloading_station ?? "--"}</code> / 备 <code>${escapeHtml(alts)}</code></div>`;
         }).join("")
-        : "<div>当前快照未提供上料口默认去向。</div>";
+        : "<div>当前快照没有定义默认路径。</div>";
       const vehicleSummary = vehicleConfigs.length
         ? vehicleConfigs.map((item) => `<div>V${item.id}: 初始位置 <code>${number(item.initial_position, 1)}m</code></div>`).join("")
-        : "<div>当前快照未提供车辆初始布局。</div>";
+        : "<div>当前快照没有车辆初始化布局。</div>";
       const loadingConfigSummary = loadingConfigs.length
         ? loadingConfigs.map((item) => {
           const alts = Array.isArray(item.alternative_unloading_stations) && item.alternative_unloading_stations.length
@@ -2893,27 +3071,27 @@
             : "--";
           return `<div>IP${item.id}: <code>${number(item.position, 1)}m</code> / ${escapeHtml(item.paper_type || "--")} / 主 <code>OP${item.primary_unloading_station ?? "--"}</code> / 备 <code>${escapeHtml(alts)}</code></div>`;
         }).join("")
-        : "<div>当前快照未提供上料口配置。</div>";
+        : "<div>当前快照没有上料口布局。</div>";
       const unloadingConfigSummary = unloadingConfigs.length
         ? unloadingConfigs.map((item) => `<div>OP${item.id}: <code>${number(item.position, 1)}m</code> / ${escapeHtml(item.side || "--")}</div>`).join("")
-        : "<div>当前快照未提供下料口配置。</div>";
+        : "<div>当前快照没有下料口布局。</div>";
 
       dom.workspaceRulesList.innerHTML = `
         <div class="data-card compact">
           <strong>车辆与站点布局</strong>
           <div class="kv tight">
-            <div>required vehicle ids: <code>${escapeHtml(idsText(vehicleLayout.required_vehicle_ids || []))}</code></div>
+            <div>必需车辆 ID: <code>${escapeHtml(idsText(vehicleLayout.required_vehicle_ids || []))}</code></div>
             <div>vehicle_slot_count: <code>${escapeHtml(vehicleLayout.vehicle_slot_count ?? "--")}</code></div>
-            <div>loading_positions: <code>${escapeHtml(positionsText(stations.loading_positions || []))}</code></div>
-            <div>unloading_positions: <code>${escapeHtml(positionsText(stations.unloading_positions || []))}</code></div>
+            <div>上料位置: <code>${escapeHtml(positionsText(stations.loading_positions || []))}</code></div>
+            <div>下料位置: <code>${escapeHtml(positionsText(stations.unloading_positions || []))}</code></div>
           </div>
         </div>
         <div class="data-card compact">
-          <strong>车辆初始布局</strong>
+          <strong>车辆初始化</strong>
           <div class="kv tight">${vehicleSummary}</div>
         </div>
         <div class="data-card compact">
-          <strong>站点配置快照</strong>
+          <strong>站点快照</strong>
           <div class="kv tight">
             ${loadingConfigSummary}
             <div>---</div>
@@ -2921,28 +3099,28 @@
           </div>
         </div>
         <div class="data-card compact">
-          <strong>卷纸与占槽规则</strong>
+          <strong>卷纸与槽位规则</strong>
           <div class="kv tight">
-            <div>roll_types: <code>${escapeHtml((cargoRules.roll_types || []).join(", ") || "--")}</code></div>
-            <div>small_roll_range: <code>${escapeHtml(positionsText(cargoRules.small_roll_diameter_range || []))}m</code></div>
-            <div>large_roll_range: <code>${escapeHtml(positionsText(cargoRules.large_roll_diameter_range || []))}m</code></div>
-            <div>small_roll_limit: <code>${number(cargoRules.small_roll_diameter_limit, 1)}m</code></div>
+            <div>卷纸类型: <code>${escapeHtml((cargoRules.roll_types || []).join(", ") || "--")}</code></div>
+            <div>小卷直径范围: <code>${escapeHtml(positionsText(cargoRules.small_roll_diameter_range || []))}m</code></div>
+            <div>大卷直径范围: <code>${escapeHtml(positionsText(cargoRules.large_roll_diameter_range || []))}m</code></div>
+            <div>小卷阈值: <code>${number(cargoRules.small_roll_diameter_limit, 1)}m</code></div>
             <div>required_slots: <code>small<=limit ${cargoRules.required_slots_rules?.small_roll_at_or_below_limit ?? "--"} / small>limit ${cargoRules.required_slots_rules?.small_roll_above_limit ?? "--"} / large ${cargoRules.required_slots_rules?.large_roll ?? "--"}</code></div>
           </div>
         </div>
         <div class="data-card compact">
-          <strong>去向与安全规则</strong>
+          <strong>路由与安全规则</strong>
           <div class="kv tight">
-            <div>alternative switch distance: <code>${number(routingRules.alternative_unloading_switch_distance, 1)}m</code></div>
+            <div>备选切换距离: <code>${number(routingRules.alternative_unloading_switch_distance, 1)}m</code></div>
             <div>max_jerk: <code>${number(safetyRules.max_jerk, 2)}</code></div>
-            <div>direction deadband: <code>${number(safetyRules.action_direction_deadband, 4)}</code></div>
-            <div>min direction change steps: <code>${escapeHtml(safetyRules.min_direction_change_interval_steps ?? "--")}</code></div>
+            <div>方向死区: <code>${number(safetyRules.action_direction_deadband, 4)}</code></div>
+            <div>最小方向切换步数: <code>${escapeHtml(safetyRules.min_direction_change_interval_steps ?? "--")}</code></div>
             <div>projection eps: <code>${number(safetyRules.safety_projection_eps, 6)}</code></div>
-            <div>decision / control: <code>${number(timing.high_level_decision_interval, 1)} / ${number(timing.low_level_control_interval, 1)}s</code></div>
+            <div>决策 / 控制: <code>${number(timing.high_level_decision_interval, 1)} / ${number(timing.low_level_control_interval, 1)}s</code></div>
           </div>
         </div>
         <div class="data-card compact">
-          <strong>上料口默认去向</strong>
+          <strong>上料路径默认规则</strong>
           <div class="kv tight">${routingSummary}</div>
         </div>
       `;
@@ -2952,26 +3130,26 @@
       const summary = currentSummary();
       const metadata = currentMetadata();
       const configSnapshot = currentConfigSnapshot() || {};
-      const trainingStats = metadata.training_stats || {};
+      const historyStats = metadata.training_stats || {};
       const provenance = metadata.data_provenance || {};
       const learning = configSnapshot.learning || {};
       const system = frame.system || {};
       const mappingEntries = Object.entries(summary.model_mapping || {});
       const selectedModelId = metadata.selected_model_id || summary.selected_model_id;
       const chips = [];
-      if (summary.kind) chips.push(`<span class="chip alt">${escapeHtml(summary.kind)}</span>`);
+      if (summary.kind) chips.push(`<span class="chip ok">${summary.kind === "test" ? "测试回放" : "回放"}</span>`);
       if (summary.controller_mode) chips.push(`<span class="chip">${escapeHtml(summary.controller_mode)}</span>`);
       if (summary.seed != null) chips.push(`<span class="chip">seed ${summary.seed}</span>`);
       if (summary.visualization_sampling_interval != null) chips.push(`<span class="chip">采样 ${number(summary.visualization_sampling_interval, 1)}s</span>`);
-      if (selectedModelId) chips.push(`<span class="chip alt">model ${escapeHtml(selectedModelId)}</span>`);
-      if (metadata.deterministic_inference === true) chips.push('<span class="chip ok">deterministic</span>');
-      if ((system.safety_violations || []).length) chips.push(`<span class="chip warn">Safety V${system.safety_violations.join(", V")}</span>`);
+      if (selectedModelId) chips.push(`<span class="chip alt">模型 ${escapeHtml(selectedModelId)}</span>`);
+      if (metadata.deterministic_inference === true) chips.push('<span class="chip ok">确定性</span>');
+      if ((system.safety_violations || []).length) chips.push(`<span class="chip warn">安全 V${system.safety_violations.join(", V")}</span>`);
 
       const currentTopology = currentWorkspaceTopology();
       const recordedTopology = currentRecordedTopology();
-      const statsNote = trainingStats.available
-        ? `best_avg_reward ${number(trainingStats.best_avg_reward, 3)} · latest_reward ${number(trainingStats.latest_reward, 3)}`
-        : "未记录 training_stats.json";
+      const statsNote = historyStats.available
+        ? `best_avg_reward ${number(historyStats.best_avg_reward, 3)} · latest_reward ${number(historyStats.latest_reward, 3)}`
+        : "未记录 history_stats.json";
       const mappingSummary = mappingEntries.length
         ? mappingEntries.map(([vehicleId, path]) => `<div>V${vehicleId}: ${pathCode(path, compactPath(path))}</div>`).join("")
         : "<div>当前回放没有固定模型映射。</div>";
@@ -2983,11 +3161,11 @@
           <div class="kv tight">
             <div>job_id: <code>${escapeHtml(summary.job_id || "--")}</code></div>
             <div>episode_id: <code>${escapeHtml(summary.episode_id || "--")}</code></div>
-            <div>创建时间: <code>${escapeHtml(summary.created_at || "--")}</code></div>
+            <div>created_at: <code>${escapeHtml(summary.created_at || "--")}</code></div>
             <div>episode_index: <code>${escapeHtml(summary.episode_index || "--")}</code></div>
             <div>selected_model_id: <code>${escapeHtml(selectedModelId || "--")}</code></div>
-            <div>recorded topology: <code>${escapeHtml(recordedTopology.summary_text || topologyText(recordedTopology))}</code></div>
-            <div>current workspace: <code>${escapeHtml(currentTopology.summary_text || topologyText(currentTopology))}</code></div>
+            <div>录制拓扑: <code>${escapeHtml(recordedTopology.summary_text || topologyText(recordedTopology))}</code></div>
+            <div>当前工作区: <code>${escapeHtml(currentTopology.summary_text || topologyText(currentTopology))}</code></div>
           </div>
         </div>
 
@@ -2995,37 +3173,37 @@
           <strong>数据来源与产物</strong>
           <div class="chip-row">
             <span class="chip ok">${escapeHtml(provenance.kind || "seeded_simulation")}</span>
-            <span class="chip">${trainingStats.available ? "stats available" : "stats missing"}</span>
+            <span class="chip">${historyStats.available ? "有统计" : "无统计"}</span>
           </div>
           <div class="kv tight">
             <div>config_source: ${pathCode(provenance.config_source?.path || configSnapshot.source_file, provenance.config_source?.display_path || compactPath(configSnapshot.source_file))}</div>
             <div>episode_dir: ${pathCode(metadata.paths?.episode_dir, metadata.paths?.episode_dir_display)}</div>
             <div>report_html: ${pathCode(metadata.paths?.report_path, metadata.paths?.report_path_display)}</div>
             <div>source_model: ${pathCode(metadata.source_model_path || summary.source_model_path, compactPath(metadata.source_model_path || summary.source_model_path))}</div>
-            <div>recorded loading/unloading: <code>${escapeHtml(positionsText(recordedTopology.loading_positions))}</code> / <code>${escapeHtml(positionsText(recordedTopology.unloading_positions))}</code></div>
+            <div>recorded 上/下料位置: <code>${escapeHtml(positionsText(recordedTopology.loading_positions))}</code> / <code>${escapeHtml(positionsText(recordedTopology.unloading_positions))}</code></div>
           </div>
         </div>
 
         <div class="data-card compact">
-          <strong>算法与附加信息</strong>
+          <strong>算法与扩展</strong>
           <div class="chip-row">
-            ${summary.kind === "train" ? '<span class="chip alt">训练视角</span>' : '<span class="chip ok">测试视角</span>'}
-            ${configSnapshot.source_file ? `<span class="chip">current config.py</span>` : ""}
+            <span class="chip ok">测试回放</span>
+            ${configSnapshot.source_file ? `<span class="chip">当前 config.py</span>` : ""}
           </div>
           <div class="kv tight">
             <div>controller_mode: <code>${escapeHtml(summary.controller_mode || "--")}</code></div>
             <div>learning_rate / batch_size: <code>${number(learning.learning_rate, 6)}</code> / <code>${escapeHtml(learning.batch_size ?? "--")}</code></div>
             <div>gamma / hidden_dim: <code>${number(learning.gamma, 2)}</code> / <code>${escapeHtml(learning.hidden_dim ?? "--")}</code></div>
-            <div>required vehicle ids: <code>${escapeHtml(idsText(configSnapshot.vehicle_layout?.required_vehicle_ids || []))}</code></div>
-            <div>training stats: <code>${escapeHtml(statsNote)}</code></div>
+            <div>必需车辆 ID: <code>${escapeHtml(idsText(configSnapshot.vehicle_layout?.required_vehicle_ids || []))}</code></div>
+            <div>历史统计: <code>${escapeHtml(statsNote)}</code></div>
           </div>
           <details class="summary-details">
-            <summary>展开训练统计与模型映射</summary>
+            <summary>展开历史统计与模型映射</summary>
             <div class="kv tight">
-              <div>training_stats: ${pathCode(trainingStats.path, trainingStats.display_path)}</div>
-              <div>latest_completion: <code>${trainingStats.latest_completion != null ? String(trainingStats.latest_completion) : "--"}</code></div>
-              <div>latest_actor_loss / critic_loss: <code>${number(trainingStats.latest_actor_loss, 4)}</code> / <code>${number(trainingStats.latest_critic_loss, 4)}</code></div>
-              <div>scheduler: <code>${(learning.scheduler?.enabled ?? learning.lr_scheduler_enabled) ? `WarmCosine (${learning.scheduler?.warmup_episodes ?? learning.lr_warmup_episodes ?? "--"}ep)` : "disabled"}</code></div>
+              <div>history_stats: ${pathCode(historyStats.path, historyStats.display_path)}</div>
+              <div>latest_completion: <code>${historyStats.latest_completion != null ? String(historyStats.latest_completion) : "--"}</code></div>
+              <div>latest_actor_loss / critic_loss: <code>${number(historyStats.latest_actor_loss, 4)}</code> / <code>${number(historyStats.latest_critic_loss, 4)}</code></div>
+              <div>scheduler: <code>${(learning.scheduler?.enabled ?? learning.lr_scheduler_enabled) ? `WarmCosine (${learning.scheduler?.warmup_episodes ?? learning.lr_warmup_episodes ?? "--"}ep)` : "禁用"}</code></div>
             </div>
             <div class="kv tight">${mappingSummary}</div>
           </details>
@@ -3037,22 +3215,20 @@
       const summary = currentSummary();
       const selectedModelId = currentMetadata().selected_model_id || summary.selected_model_id;
       const compatibility = currentTopologyCompatibility();
-      const compatibilityLabel = compatibility.status === "match" ? "MATCH" : "MISMATCH";
+      const compatibilityLabel = compatibility.status === "match" ? "匹配" : "不匹配";
       const durationText = Number.isFinite(Number(summary.episode_duration))
         ? `${number(summary.episode_duration, 0)}s`
         : "--";
-      dom.episodeTitle.textContent = summary.episode_id || summary.run_label || "AGV Episode Replay";
-      dom.episodeSubtitle.textContent = summary.kind === "train"
-        ? "当前舞台按 recorded replay 回放；current workspace 只作为规则和 rerun today 的参考。"
-        : `当前展示的是历史录制结果；模型组 ${selectedModelId || "--"} 代表这次回放的推理来源。`;
+      dom.episodeTitle.textContent = summary.episode_id || summary.run_label || "AGV 回放";
+      dom.episodeSubtitle.textContent = "此视图由录制回放数据驱动；当前工作区仅用于对照和 rerun today。";
       dom.episodeMeta.innerHTML = `
-        <div>kind <code>${escapeHtml(summary.kind || "--")}</code> · episode <code>${escapeHtml(summary.episode_index || "--")}</code></div>
-        <div>model <code>${escapeHtml(selectedModelId || "--")}</code> · seed <code>${escapeHtml(summary.seed || "--")}</code></div>
-        <div>duration <code>${escapeHtml(durationText)}</code> · topology <code>${escapeHtml(compatibilityLabel)}</code></div>
+        <div>类型 <code>${escapeHtml(summary.kind === "test" ? "测试" : "回放")}</code> · episode <code>${escapeHtml(summary.episode_index || "--")}</code></div>
+        <div>模型 <code>${escapeHtml(selectedModelId || "--")}</code> · seed <code>${escapeHtml(summary.seed || "--")}</code></div>
+        <div>时长 <code>${escapeHtml(durationText)}</code> · 拓扑 <code>${escapeHtml(compatibilityLabel)}</code></div>
       `;
       dom.timeLabel.textContent = formatTime(frame.time || 0);
-      dom.frameLabel.textContent = `Frame ${state.currentIndex + 1} / ${Math.max(currentFrames().length, 1)}`;
-      dom.runtimeMeta.textContent = `模式: ${state.apiEnabled ? "本地后端已连接" : (state.embeddedMode ? "嵌入式回放" : "离线模板")} · ${state.activeLibraryTab === "models" ? "Models workspace" : "Replay workspace"}`;
+      dom.frameLabel.textContent = `帧 ${state.currentIndex + 1} / ${Math.max(currentFrames().length, 1)}`;
+      dom.runtimeMeta.textContent = `模式: ${state.apiEnabled ? "本地后端已连接" : (state.embeddedMode ? "嵌入式回放" : "离线模板")} · ${state.activeLibraryTab === "models" ? "模型工作区" : "回放工作区"}`;
     }
 
     function renderFrame(index) {
@@ -3082,22 +3258,21 @@
       dom.episodesTab.classList.toggle("active", showEpisodes);
       dom.modelsTab.classList.toggle("active", !showEpisodes);
       dom.libraryCaption.textContent = showEpisodes
-        ? "像浏览任务记录一样快速切换历史回放，只保留影响判断的少量状态与 topology 摘要。"
-        : "像浏览 readiness 列表一样检查模型覆盖、缺失车辆和 test 阻塞原因，再决定是否发起测试。";
+        ? "浏览测试回放记录，优先展示 recorded topology 与当前工作区差异。"
+        : "浏览模型就绪状态，确认覆盖与缺失后再发起确定性测试。";
       renderEpisodeLibrary();
       renderModelLibrary();
       renderWorkspaceMode();
     }
-
     function setTestHint(message, tone = "warn") {
       dom.testHint.textContent = message;
       dom.testHint.dataset.tone = tone;
     }
 
     function populateModelSelect() {
-      const previousValue = dom.modelSelect.value || state.selectedModelId;
+      const previousValue = dom.modelSelect.value || state.selectedModelId || null;
       const options = state.models
-        .map((model) => `<option value="${escapeHtml(model.id)}">${escapeHtml(model.id)}${model.complete_for_current_config ? " · ready" : " · blocked"}</option>`)
+        .map((model) => `<option value="${escapeHtml(model.id)}">${escapeHtml(model.id)}${model.complete_for_current_config ? " · 就绪" : " · 阻塞"}</option>`)
         .join("");
       dom.modelSelect.innerHTML = options || '<option value="">暂无可识别模型组</option>';
 
@@ -3116,11 +3291,11 @@
       const testModel = currentTestModel();
       const completeCount = state.models.filter((model) => model.complete_for_current_config).length;
       if (testModel && testModel.complete_for_current_config) {
-        setTestHint(`当前测试目标 ${testModel.id} 已覆盖当前配置要求；可直接发起 deterministic test。`, "ok");
+        setTestHint(`当前目标 ${testModel.id} 已可直接发起确定性测试。`, "ok");
       } else if (testModel) {
-        setTestHint(testModel.completeness_reason || "当前选中模型尚未覆盖当前配置要求的车辆。", "warn");
+        setTestHint(testModel.completeness_reason || "当前选中模型组尚未覆盖当前工作区要求的车辆。", "warn");
       } else if (completeCount) {
-        setTestHint(`已找到 ${completeCount} 个可直接用于当前配置测试的完整模型组。`, "ok");
+        setTestHint(`已找到 ${completeCount} 个可直接用于当前工作区测试的完整模型组。`, "ok");
       } else {
         setTestHint(state.models.length ? "当前模型组都还没覆盖完整车辆。" : "当前 models 目录还没有可识别的模型组。", "warn");
       }
@@ -3128,26 +3303,26 @@
     }
 
     function renderJobs() {
-      if (!state.jobs.length) {
-        dom.jobList.innerHTML = '<div class="empty">当前没有运行中的任务。</div>';
+      const visibleJobs = state.jobs.filter((job) => job.kind === "test");
+      if (!visibleJobs.length) {
+        dom.jobList.innerHTML = '<div class="empty">暂无 test 任务记录。</div>';
         return;
       }
-      dom.jobList.innerHTML = state.jobs.map((job) => `
+      dom.jobList.innerHTML = visibleJobs.map((job) => `
         <div class="job-row">
           <strong>${escapeHtml(job.id)}</strong>
           <div class="chip-row">
             <span class="chip ${job.status === "completed" ? "ok" : (job.status === "failed" ? "warn" : "alt")}">${escapeHtml(job.status)}</span>
-            <span class="chip">progress ${(Number(job.progress || 0) * 100).toFixed(0)}%</span>
+            <span class="chip">进度 ${(Number(job.progress || 0) * 100).toFixed(0)}%</span>
             <span class="chip">${escapeHtml(job.kind)}</span>
             ${job.data_source_label ? `<span class="chip alt">${escapeHtml(job.data_source_label)}</span>` : ""}
           </div>
           <div class="job-meta wrap">${escapeHtml(job.message || "")}</div>
           <div class="job-meta wrap">
-            episodes ${job.completed_episodes || 0} / ${job.episode_count || 0}
-            ${job.kind === "train" ? ` · sample ${escapeHtml(job.config_summary?.sample_interval ?? "--")}s · device ${escapeHtml(job.config_summary?.device || "--")}` : ""}
-            ${job.kind === "test" ? ` · seed ${escapeHtml(job.config_summary?.seed ?? "--")} · model ${escapeHtml(job.config_summary?.model_id || "--")}` : ""}
+            episode ${job.completed_episodes || 0} / ${job.episode_count || 0}
+            ${job.kind === "test" ? ` · seed ${escapeHtml(job.config_summary?.seed ?? "--")} · 模型 ${escapeHtml(job.config_summary?.model_id || "--")}` : ""}
           </div>
-          ${job.generated_model_sets?.length ? `<div class="job-meta wrap">产出模型: ${escapeHtml(job.generated_model_sets.join(", "))}</div>` : ""}
+          ${job.generated_model_sets?.length ? `<div class="job-meta wrap">生成模型: ${escapeHtml(job.generated_model_sets.join(", "))}</div>` : ""}
           ${job.output_dir_display ? `<div class="job-meta wrap">输出目录: ${escapeHtml(job.output_dir_display)}</div>` : ""}
           ${job.error ? `<details class="job-error"><summary>查看错误详情</summary><pre>${escapeHtml(job.error)}</pre></details>` : ""}
         </div>
@@ -3155,20 +3330,21 @@
     }
 
     function renderEpisodeLibrary() {
-      if (!state.episodes.length) {
-        dom.episodeLibrary.innerHTML = '<div class="empty">还没有保存的 episode。启动 train / test 后，这里会出现可回放记录。</div>';
+      const visibleEpisodes = state.episodes.filter((episode) => episode.kind === "test");
+      if (!visibleEpisodes.length) {
+        dom.episodeLibrary.innerHTML = '<div class="empty">暂无 test episode 记录。</div>';
         return;
       }
       const activeEpisodeId = activeEpisodeListId();
-      dom.episodeLibrary.innerHTML = state.episodes.map((episode) => `
+      dom.episodeLibrary.innerHTML = visibleEpisodes.map((episode) => `
         <button class="list-row ${activeEpisodeId === episode.episode_id ? "active" : ""} ${state.loadingEpisodeId === episode.episode_id ? "loading" : ""}" data-episode-id="${escapeHtml(episode.episode_id)}">
           <strong>${escapeHtml(episode.episode_id)}</strong>
           <div class="chip-row">
-            <span class="chip ${episode.kind === "train" ? "alt" : "ok"}">${escapeHtml(episode.kind || "--")}</span>
-            <span class="chip ${episode.topology_compatibility?.status === "match" ? "ok" : "warn"}">${escapeHtml(episode.topology_compatibility?.status || "unknown")}</span>
+            <span class="chip ok">测试</span>
+            <span class="chip ${episode.topology_compatibility?.status === "match" ? "ok" : "warn"}">${escapeHtml(episode.topology_compatibility?.status === "match" ? "匹配" : (episode.topology_compatibility?.status === "mismatch" ? "不匹配" : "未知"))}</span>
             <span class="chip">seed ${escapeHtml(episode.seed || "--")}</span>
-            <span class="chip">done ${escapeHtml(episode.completed_cargos || 0)}</span>
-            ${state.loadingEpisodeId === episode.episode_id ? '<span class="chip alt">loading</span>' : ""}
+            <span class="chip">完成 ${escapeHtml(episode.completed_cargos || 0)}</span>
+            ${state.loadingEpisodeId === episode.episode_id ? '<span class="chip alt">加载中</span>' : ""}
             ${episode.selected_model_id ? `<span class="chip alt">${escapeHtml(episode.selected_model_id)}</span>` : ""}
           </div>
           <div class="list-meta wrap">${escapeHtml(episode.recorded_topology?.summary_text || episode.topology_compatibility?.recorded_text || episode.topology_compatibility?.summary_line || "--")}</div>
@@ -3181,21 +3357,22 @@
     }
 
     function renderModelLibrary() {
-      if (!state.models.length) {
-        dom.modelLibrary.innerHTML = '<div class="empty">当前 models 目录没有可识别的模型组。</div>';
+      const visibleModels = state.models || [];
+      if (!visibleModels.length) {
+        dom.modelLibrary.innerHTML = '<div class="empty">暂无可识别的模型组。</div>';
         return;
       }
       const activeModelId = currentSelectedModel()?.id;
-      dom.modelLibrary.innerHTML = state.models.map((model) => `
+      dom.modelLibrary.innerHTML = visibleModels.map((model) => `
         <button class="list-row ${activeModelId === model.id ? "active" : ""}" data-model-id="${escapeHtml(model.id)}">
           <strong>${escapeHtml(model.id)}</strong>
           <div class="chip-row">
-            <span class="chip ${model.complete_for_current_config ? "ok" : "warn"}">${model.complete_for_current_config ? "ready" : "blocked"}</span>
-            <span class="chip">found ${escapeHtml(idsText(model.vehicle_ids || []))}</span>
-            <span class="chip alt">missing ${escapeHtml(idsText(model.missing_vehicle_ids || []))}</span>
+            <span class="chip ${model.complete_for_current_config ? "ok" : "warn"}">${model.complete_for_current_config ? "就绪" : "阻塞"}</span>
+            <span class="chip">已发现 ${escapeHtml(idsText(model.vehicle_ids || []))}</span>
+            <span class="chip alt">缺失 ${escapeHtml(idsText(model.missing_vehicle_ids || []))}</span>
           </div>
           <div class="list-meta wrap">${escapeHtml(model.completeness_reason || "")}</div>
-          <div class="list-meta wrap">${escapeHtml(model.updated_at || "--")} · required ${escapeHtml(idsText(model.required_vehicle_ids || []))}</div>
+          <div class="list-meta wrap">${escapeHtml(model.updated_at || "--")} · 必需 ${escapeHtml(idsText(model.required_vehicle_ids || []))}</div>
         </button>
       `).join("");
       dom.modelLibrary.querySelectorAll("[data-model-id]").forEach((node) => {
@@ -3242,10 +3419,9 @@
     }
 
     function toggleControlAvailability(enabled) {
-      [dom.trainEpisodes, dom.trainSampleInterval, dom.testEpisodes, dom.testSeed, dom.testSampleInterval, dom.testDuration].forEach((node) => {
+      [dom.testEpisodes, dom.testSeed, dom.testSampleInterval, dom.testDuration].forEach((node) => {
         node.disabled = !enabled;
       });
-      document.getElementById("trainButton").disabled = !enabled;
       document.getElementById("testButton").disabled = !enabled;
       if (!enabled) {
         dom.modelSelect.disabled = true;
@@ -3260,63 +3436,70 @@
         renderJobs();
       if (!state.hasApi) {
         state.apiEnabled = false;
-        setStatus(state.embeddedMode ? "已载入嵌入式回放，未连接本地后端" : "当前为静态模板模式，请先启动本地服务", state.embeddedMode ? "ok" : "warn");
-        dom.workspaceHint.textContent = state.embeddedMode
-          ? "当前文件已经内嵌 episode 数据，可以离线回放。若要触发 train / test，请运行 `python -m ui.simulation_web`。"
-          : "请运行 `python -m ui.simulation_web`，然后通过 http://127.0.0.1:8000/simulation_report.html 打开页面。";
-        toggleControlAvailability(false);
-        renderEpisodeLibrary();
-        renderModelLibrary();
-        if (currentFrames().length) {
-          renderFrame(state.currentIndex);
-        } else {
-          renderWorkspaceMode();
-        }
-        return;
-      }
-
-      try {
-        const payload = await fetchJson("/api/state");
-        state.apiEnabled = Boolean(payload.api_enabled);
-        state.jobs = payload.jobs || [];
-        state.models = payload.models || [];
-        state.episodes = payload.episodes || [];
-        state.configSnapshot = payload.config_snapshot || state.configSnapshot;
-        toggleControlAvailability(state.apiEnabled);
-        populateModelSelect();
-        renderJobs();
-        renderEpisodeLibrary();
-        renderModelLibrary();
-        if (currentFrames().length) {
-          renderFrame(state.currentIndex);
-        } else {
-          renderWorkspaceMode();
-        }
-        setStatus(state.apiEnabled ? "本地后端已连接，可直接发起 train / test" : "后端未启用", state.apiEnabled ? "ok" : "warn");
-        dom.workspaceHint.textContent = payload.workspace ? `工作区: ${payload.workspace} | 配置来自当前 config.py` : "工作区路径不可用";
-        if ((!state.episode || !currentFrames().length) && state.episodes.length && !state.loadingEpisodeId) {
-          const preferredEpisode = state.episodes.find((episode) => episode.episode_id === state.preferredEpisodeId);
-          await loadEpisodeById((preferredEpisode || state.episodes[0]).episode_id, { auto: true }).catch(() => null);
-        } else if (state.currentEpisodeId || state.episode) {
+          setStatus(state.embeddedMode ? "已载入嵌入式回放，未连接本地后端" : "静态模板模式，请先启动本地服务", state.embeddedMode ? "ok" : "warn");
+          dom.workspaceHint.textContent = state.embeddedMode
+            ? "当前文件已经内嵌 episode 数据，可以离线回放。若要发起确定性测试，请运行 `python -m ui.simulation_web`。"
+            : "请运行 `python -m ui.simulation_web`，然后通过本地服务地址打开页面。";
+          toggleControlAvailability(false);
           renderEpisodeLibrary();
+          renderModelLibrary();
+          if (currentFrames().length) {
+            renderFrame(state.currentIndex);
+          } else {
+            renderWorkspaceMode();
+          }
+          return;
         }
-      } catch (error) {
-        state.apiEnabled = false;
-        toggleControlAvailability(false);
-        renderJobs();
-        renderEpisodeLibrary();
-        renderModelLibrary();
-        if (currentFrames().length) {
-          renderFrame(state.currentIndex);
-        } else {
-          renderWorkspaceMode();
+
+        try {
+          const payload = await fetchJson("/api/state");
+          state.apiEnabled = Boolean(payload.api_enabled);
+          state.jobs = payload.jobs || [];
+          state.models = payload.models || [];
+          state.episodes = payload.episodes || [];
+          state.configSnapshot = payload.config_snapshot || state.configSnapshot;
+          toggleControlAvailability(state.apiEnabled);
+          populateModelSelect();
+          renderJobs();
+          renderEpisodeLibrary();
+          renderModelLibrary();
+          if (currentFrames().length) {
+            renderFrame(state.currentIndex);
+          } else {
+            renderWorkspaceMode();
+          }
+          setStatus(state.apiEnabled ? "本地后端已连接，可直接发起确定性测试" : "后端未启用", state.apiEnabled ? "ok" : "warn");
+          dom.workspaceHint.textContent = payload.workspace ? `工作区: ${payload.workspace} | 配置来自当前 config.py` : "工作区路径不可用";
+          const visibleEpisodes = state.episodes.filter((episode) => episode.kind === "test");
+          const currentEpisodeVisible = state.currentEpisodeId
+            ? visibleEpisodes.some((episode) => episode.episode_id === state.currentEpisodeId)
+            : false;
+          if ((!state.episode || !currentFrames().length || !currentEpisodeVisible) && visibleEpisodes.length && !state.loadingEpisodeId) {
+            const preferredEpisode = visibleEpisodes.find((episode) => episode.episode_id === state.preferredEpisodeId);
+            const nextEpisode = preferredEpisode || visibleEpisodes[0] || null;
+            if (nextEpisode) {
+              await loadEpisodeById(nextEpisode.episode_id, { auto: true }).catch(() => null);
+            }
+          } else if (state.currentEpisodeId || state.episode) {
+            renderEpisodeLibrary();
+          }
+        } catch (error) {
+          state.apiEnabled = false;
+          toggleControlAvailability(false);
+          renderJobs();
+          renderEpisodeLibrary();
+          renderModelLibrary();
+          if (currentFrames().length) {
+            renderFrame(state.currentIndex);
+          } else {
+            renderWorkspaceMode();
+          }
+          setStatus(state.embeddedMode || state.episode ? "已保留最近一次成功加载的回放，但本地 API 暂时不可用" : "无法连接本地后端，请运行 `python -m ui.simulation_web`", "warn");
+          if (state.episode) {
+            dom.workspaceHint.textContent = "本地 API 短暂不可用，当前工作台继续保留最近一次成功加载的回放。";
+          }
+          if (!initial) console.error(error);
         }
-        setStatus(state.embeddedMode || state.episode ? "已保留最近一次成功加载的回放，但本地 API 暂时不可用" : "无法连接本地后端，请运行 `python -m ui.simulation_web`", "warn");
-        if (state.episode) {
-          dom.workspaceHint.textContent = "本地 API 短暂不可用，当前舞台继续保留最近一次成功加载的回放。";
-        }
-        if (!initial) console.error(error);
-      }
       })();
       try {
         return await state.refreshPromise;
@@ -3324,7 +3507,6 @@
         state.refreshPromise = null;
       }
     }
-
     async function loadEpisodeById(episodeId, { auto = false } = {}) {
       if (!episodeId || !state.hasApi) return null;
       if (episodeId === state.currentEpisodeId && currentFrames().length && !state.loadingEpisodeId) {
@@ -3423,24 +3605,6 @@
       dom.playButton.textContent = "暂停";
     }
 
-    async function startTrain(event) {
-      event.preventDefault();
-      stopPlayback();
-      try {
-        const job = await fetchJson("/api/train", {
-          method: "POST",
-          body: JSON.stringify({
-            num_episodes: Number(dom.trainEpisodes.value || 5),
-            sample_interval: Number(dom.trainSampleInterval.value || 5),
-          }),
-        });
-        setStatus(`训练任务已创建: ${job.id}`, "ok");
-        await refreshState();
-      } catch (error) {
-        setStatus(`训练任务创建失败: ${error.message}`, "warn");
-      }
-    }
-
     async function startTest(event) {
       event.preventDefault();
       stopPlayback();
@@ -3474,9 +3638,7 @@
         stopPlayback();
         renderFrame(Number(event.target.value));
       });
-      dom.trainForm.addEventListener("submit", startTrain);
       dom.testForm.addEventListener("submit", startTest);
-      dom.refreshButton.addEventListener("click", () => refreshState());
       dom.episodesTab.addEventListener("click", () => setLibraryTab("episodes"));
       dom.modelsTab.addEventListener("click", () => setLibraryTab("models"));
       dom.openModelsButton.addEventListener("click", () => setLibraryTab("models"));
