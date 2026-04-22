@@ -2,6 +2,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from ui.dashboard_metadata import enrich_episode_payload
+
 
 def _json_safe(value: Any) -> Any:
     if isinstance(value, dict):
@@ -54,6 +56,12 @@ def write_simulation_report(
         frames=frames,
         summary=summary,
         statistics=statistics,
+    )
+    payload = enrich_episode_payload(
+        payload,
+        workspace=Path(__file__).resolve().parent.parent,
+        episode_dir=output_path.parent,
+        report_path=output_path,
     )
     bootstrap = {
         "mode": "embedded",

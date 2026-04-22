@@ -12,3 +12,9 @@ tmp
 *.pdf
 logs
 outputs
+.playwright-cli/
+.vscode/
+output/
+agent*-ui-server*.log
+tmp-*.log
+tmp-*.json

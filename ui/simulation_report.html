@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AGV Simulation Workbench</title>
+  <title>AGV Track Workbench</title>
   <style>
     :root {
       --bg: #ebe6dc;
@@ -69,6 +69,18 @@
     .workspace,
     .library-grid {
       animation: rise 480ms ease both;
+    }
+
+    .topbar {
+      order: 1;
+    }
+
+    .workspace {
+      order: 2;
+    }
+
+    .command-grid {
+      order: 3;
     }
 
     .topbar {
@@ -156,7 +168,7 @@
 
     .command-grid {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 16px;
     }
 
@@ -267,6 +279,19 @@
       border-radius: 18px;
       background: rgba(255, 255, 255, 0.72);
       border: 1px solid var(--line);
+      min-width: 0;
+    }
+
+    .job-row > *,
+    .list-row > *,
+    .table-row > *,
+    .stage-head > *,
+    .compat-banner > *,
+    .topbar > *,
+    .context-panel > *,
+    .rail-panel > *,
+    .command-panel > * {
+      min-width: 0;
     }
 
     .job-meta,
@@ -275,6 +300,50 @@
       font-family: var(--font-mono);
       font-size: 12px;
       color: var(--muted);
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .mono.wrap,
+    .list-meta.wrap,
+    .job-meta.wrap {
+      white-space: normal;
+      word-break: break-word;
+    }
+
+    .panel-copy,
+    .table-title,
+    .data-card strong,
+    .job-row strong,
+    .list-row strong,
+    .status-board .small,
+    .status-board .mono {
+      overflow-wrap: anywhere;
+    }
+
+    .job-error {
+      border-top: 1px dashed rgba(31, 44, 50, 0.14);
+      padding-top: 8px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .job-error summary {
+      cursor: pointer;
+      color: var(--warn);
+      font-weight: 700;
+    }
+
+    .job-error pre {
+      margin: 8px 0 0;
+      padding: 10px;
+      border-radius: 12px;
+      background: rgba(31, 44, 50, 0.06);
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font: 12px/1.45 var(--font-mono);
+      color: var(--ink);
     }
 
     .workspace {
@@ -282,12 +351,14 @@
       grid-template-columns: minmax(0, 1.3fr) minmax(360px, 0.9fr);
       gap: 16px;
       align-items: start;
+      min-width: 0;
     }
 
     .stage-panel {
       padding: 18px;
       display: grid;
       gap: 16px;
+      min-width: 0;
     }
 
     .stage-head {
@@ -347,15 +418,17 @@
       overflow: hidden;
       border: 1px solid rgba(31, 44, 50, 0.1);
       background:
-        radial-gradient(circle at 50% 50%, rgba(255, 252, 247, 1) 0%, rgba(239, 231, 213, 1) 58%, rgba(230, 220, 198, 1) 100%);
-      min-height: 620px;
+        radial-gradient(circle at 50% 50%, rgba(255, 252, 247, 1) 0%, rgba(239, 231, 213, 1) 52%, rgba(230, 220, 198, 1) 100%);
+      min-height: 520px;
+      min-width: 0;
     }
 
     svg.track {
       width: 100%;
       height: 100%;
       display: block;
-      min-height: 620px;
+      min-height: 520px;
+      min-width: 0;
     }
 
     .legend {
@@ -387,36 +460,12 @@
     .legend .l-unloading::before { background: var(--unload); }
     .legend .l-busy::before { background: var(--warn); }
 
-    .chart-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
+    .track-note {
+      margin-top: -2px;
     }
 
-    .chart-card {
-      padding: 14px;
-      border-radius: 18px;
-      background: rgba(255, 255, 255, 0.75);
-      border: 1px solid var(--line);
-      display: grid;
-      gap: 8px;
-    }
-
-    .chart-card.wide {
-      grid-column: 1 / -1;
-    }
-
-    .chart-label {
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--muted);
-    }
-
-    .chart-svg {
-      width: 100%;
-      height: 150px;
-      display: block;
+    .is-hidden {
+      display: none !important;
     }
 
     .rail {
@@ -426,12 +475,14 @@
       max-height: calc(100vh - 72px);
       overflow: auto;
       padding-right: 4px;
+      min-width: 0;
     }
 
     .rail-panel {
       padding: 16px;
       display: grid;
       gap: 12px;
+      min-width: 0;
     }
 
     .metric-grid {
@@ -445,6 +496,7 @@
       border-radius: 18px;
       border: 1px solid var(--line);
       background: rgba(255, 255, 255, 0.75);
+      min-width: 0;
     }
 
     .metric-label {
@@ -478,6 +530,7 @@
       background: rgba(255, 255, 255, 0.75);
       display: grid;
       gap: 8px;
+      min-width: 0;
     }
 
     .data-card strong {
@@ -499,6 +552,18 @@
       background: rgba(27, 106, 115, 0.08);
       padding: 1px 6px;
       border-radius: 999px;
+      white-space: normal;
+      word-break: break-word;
+    }
+
+    .kv.tight {
+      gap: 2px;
+    }
+
+    .detail-note {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
     }
 
     .chip-row {
@@ -549,6 +614,7 @@
       display: grid;
       gap: 12px;
       align-content: start;
+      min-width: 0;
     }
 
     .list-stack {
@@ -574,6 +640,11 @@
       border-color: rgba(27, 106, 115, 0.28);
     }
 
+    .list-row.loading {
+      background: rgba(196, 141, 40, 0.1);
+      border-color: rgba(196, 141, 40, 0.26);
+    }
+
     .empty {
       padding: 14px;
       border-radius: 18px;
@@ -587,6 +658,290 @@
       display: none !important;
     }
 
+    .topbar {
+      align-items: center;
+      margin-bottom: 2px;
+      min-width: 0;
+    }
+
+    .headline {
+      font-size: clamp(28px, 4.5vw, 44px);
+      line-height: 1;
+    }
+
+    .subline {
+      margin-top: 6px;
+      max-width: 880px;
+      font-size: 14px;
+    }
+
+    .status-board {
+      justify-items: stretch;
+      gap: 8px;
+      padding: 16px 18px;
+      min-width: 0;
+    }
+
+    .status-board .mono,
+    .status-board .small {
+      line-height: 1.45;
+    }
+
+    .command-grid {
+      gap: 12px;
+    }
+
+    .command-panel {
+      padding: 16px;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .command-panel .empty,
+    #testHint {
+      padding: 10px 12px;
+      border-radius: 14px;
+    }
+
+    #testHint[data-tone="warn"] {
+      border-color: rgba(191, 90, 54, 0.18);
+      background: rgba(191, 90, 54, 0.08);
+      color: #8c3c21;
+    }
+
+    #testHint[data-tone="ok"] {
+      border-color: rgba(75, 159, 95, 0.22);
+      background: rgba(75, 159, 95, 0.08);
+      color: #275a34;
+    }
+
+    .workspace {
+      grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.9fr);
+      gap: 14px;
+    }
+
+    .stage-panel {
+      padding: 16px;
+      min-width: 0;
+    }
+
+    .stage-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 286px) minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+      min-width: 0;
+    }
+
+    .library-dock,
+    .stage-focus {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .dock-head {
+      display: grid;
+      gap: 10px;
+    }
+
+    .tab-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .tab-button {
+      width: auto;
+      min-width: 92px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.78);
+      color: var(--ink);
+      font-weight: 700;
+    }
+
+    .tab-button.active {
+      background: linear-gradient(135deg, #1c6d76 0%, #124f56 100%);
+      color: white;
+    }
+
+    .compat-banner {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.78);
+      border: 1px solid var(--line);
+      min-width: 0;
+    }
+
+    .compat-pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 0 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      background: rgba(191, 90, 54, 0.12);
+      color: #8c3c21;
+    }
+
+    .compat-pill[data-status="match"] {
+      background: rgba(75, 159, 95, 0.12);
+      color: #275a34;
+    }
+
+    .stage-head {
+      align-items: start;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .stage-head h2 {
+      font-size: clamp(22px, 2.2vw, 30px);
+    }
+
+    .stage-head .meta {
+      min-width: 180px;
+      padding-top: 4px;
+    }
+
+    .playback-bar {
+      padding: 10px 12px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid var(--line);
+      min-width: 0;
+    }
+
+    .track-wrap,
+    svg.track {
+      min-height: 430px;
+      min-width: 0;
+    }
+
+    .legend {
+      gap: 8px 14px;
+    }
+
+    .topology-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .context-panel {
+      display: grid;
+      gap: 10px;
+      padding: 14px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.75);
+      border: 1px solid var(--line);
+      min-width: 0;
+    }
+
+    .context-panel .panel-title {
+      font-size: 12px;
+    }
+
+    .rail {
+      gap: 12px;
+      max-height: none;
+    }
+
+    .rail-panel {
+      padding: 14px;
+    }
+
+    .metric-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .metric {
+      padding: 10px 12px;
+      border-radius: 14px;
+      min-width: 0;
+    }
+
+    .metric-value {
+      margin-top: 4px;
+      font-size: 24px;
+    }
+
+    .data-list {
+      gap: 8px;
+      max-height: 260px;
+    }
+
+    .data-card {
+      padding: 10px 12px;
+      border-radius: 16px;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .data-card.compact {
+      padding: 8px 10px;
+    }
+
+    .table-shell {
+      display: grid;
+      gap: 6px;
+    }
+
+    .table-row {
+      display: grid;
+      grid-template-columns: minmax(78px, 0.7fr) minmax(80px, 0.8fr) minmax(90px, 0.9fr) minmax(0, 1.6fr);
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(31, 44, 50, 0.08);
+      align-items: start;
+      min-width: 0;
+    }
+
+    .table-row:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+
+    .table-title {
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+
+    .table-sub {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+      overflow-wrap: anywhere;
+    }
+
+    .table-code {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--ink);
+      white-space: normal;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+
+    .library-dock .list-stack {
+      max-height: 540px;
+    }
+
+    .library-dock .list-row {
+      padding: 10px 12px;
+      border-radius: 16px;
+    }
+
     @keyframes rise {
       from {
         opacity: 0;
@@ -598,16 +953,17 @@
       }
     }
 
-    @media (max-width: 1280px) {
+    @media (max-width: 1180px) {
       .topbar,
       .workspace,
-      .library-grid,
       .command-grid {
         grid-template-columns: 1fr;
       }
 
-      .rail {
-        max-height: none;
+      .stage-layout,
+      .topology-grid,
+      .metric-grid {
+        grid-template-columns: 1fr;
       }
     }
 
@@ -617,15 +973,13 @@
       }
 
       .playback-bar,
-      .form-grid,
-      .metric-grid,
-      .chart-grid {
+      .form-grid {
         grid-template-columns: 1fr;
       }
 
       .track-wrap,
       svg.track {
-        min-height: 480px;
+        min-height: 360px;
       }
 
       .stage-head {
@@ -636,6 +990,324 @@
       .stage-head .meta {
         text-align: left;
       }
+
+      .table-row {
+        grid-template-columns: 1fr;
+        gap: 4px;
+      }
+    }
+
+    /* Workspace-first refresh overrides */
+    .topbar {
+      order: 1;
+      grid-template-columns: minmax(0, 1.55fr) minmax(280px, 0.82fr);
+      gap: 12px;
+      align-items: start;
+    }
+
+    .command-grid {
+      order: 2;
+      grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.94fr) minmax(0, 0.94fr);
+      gap: 12px;
+      align-items: start;
+    }
+
+    .workspace {
+      order: 3;
+      grid-template-columns: minmax(0, 1.58fr) minmax(300px, 0.82fr);
+      gap: 12px;
+      align-items: start;
+    }
+
+    .brand {
+      padding: 0;
+    }
+
+    .eyebrow {
+      margin-bottom: 6px;
+    }
+
+    .headline {
+      font-size: clamp(24px, 3.1vw, 36px);
+      line-height: 1.02;
+    }
+
+    .subline {
+      margin-top: 4px;
+      max-width: 760px;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .status-inline {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .panel-header-inline {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .inline-button {
+      width: auto;
+      padding: 9px 12px;
+      white-space: nowrap;
+    }
+
+    .command-panel {
+      padding: 14px 14px 16px;
+      gap: 10px;
+    }
+
+    .command-panel .form-grid {
+      gap: 8px;
+    }
+
+    .command-panel--jobs .job-stack {
+      max-height: 166px;
+    }
+
+    .command-actions button {
+      min-width: 120px;
+    }
+
+    .stage-panel {
+      padding: 14px;
+    }
+
+    .stage-layout {
+      grid-template-columns: minmax(240px, 272px) minmax(0, 1fr);
+      gap: 14px;
+    }
+
+    .library-dock,
+    .stage-focus,
+    .stage-shell,
+    .dock-detail,
+    .model-hero,
+    .panel-header-inline {
+      min-width: 0;
+    }
+
+    .stage-shell {
+      display: grid;
+      gap: 12px;
+    }
+
+    .stage-focus {
+      gap: 14px;
+    }
+
+    .list-stack {
+      max-height: 390px;
+    }
+
+    .library-dock .list-stack {
+      max-height: 430px;
+    }
+
+    .library-dock .list-row {
+      width: 100%;
+      text-align: left;
+      align-content: start;
+    }
+
+    .dock-detail {
+      padding: 12px;
+      gap: 6px;
+    }
+
+    .dock-detail strong,
+    .list-row strong {
+      font-size: 14px;
+      letter-spacing: -0.01em;
+    }
+
+    #copySelectionButton {
+      width: 100%;
+    }
+
+    .list-row .chip {
+      min-height: 24px;
+      padding: 0 8px;
+      font-size: 11px;
+    }
+
+    .stage-head .meta {
+      font-size: 12px;
+      line-height: 1.5;
+      min-width: 180px;
+    }
+
+    .playback-bar {
+      gap: 8px;
+    }
+
+    #episodeWorkspace .track-wrap,
+    #episodeWorkspace svg.track {
+      min-height: clamp(400px, 52vh, 620px);
+    }
+
+    .topology-grid--triple {
+      grid-template-columns: minmax(0, 0.95fr) minmax(0, 1fr) minmax(0, 1fr);
+    }
+
+    .diff-panel {
+      background: rgba(27, 106, 115, 0.08);
+    }
+
+    .model-hero {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      gap: 12px;
+    }
+
+    .model-status-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .model-workspace-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.08fr) minmax(0, 0.92fr);
+      gap: 12px;
+      align-items: start;
+    }
+
+    .inline-test-panel {
+      border-radius: 18px;
+      box-shadow: none;
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid var(--line);
+      padding: 12px;
+    }
+
+    .activity-group {
+      display: grid;
+      gap: 6px;
+      padding: 8px 0;
+      border-bottom: 1px dashed rgba(31, 44, 50, 0.12);
+    }
+
+    .activity-group:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+
+    .activity-group-title {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .activity-item {
+      display: grid;
+      gap: 2px;
+      padding: 4px 0;
+    }
+
+    .summary-details {
+      display: grid;
+      gap: 8px;
+    }
+
+    .summary-details summary {
+      cursor: pointer;
+      color: var(--accent-strong);
+      font-weight: 700;
+    }
+
+    .summary-details:not([open]) > :not(summary) {
+      display: none;
+    }
+
+    .rail {
+      padding-right: 0;
+    }
+
+    .data-list,
+    .job-stack,
+    .list-stack,
+    .kv,
+    .panel-copy,
+    .list-meta,
+    .model-hero,
+    .dock-detail {
+      overflow-wrap: anywhere;
+    }
+
+    @media (max-width: 1180px) {
+      .workspace {
+        grid-template-columns: 1fr;
+      }
+
+      .stage-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .stage-focus {
+        order: 1;
+      }
+
+      .library-dock {
+        order: 2;
+      }
+
+      .library-dock .list-stack {
+        max-height: 200px;
+      }
+
+      .topology-grid--triple,
+      .model-status-grid,
+      .model-workspace-grid,
+      .metric-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .rail {
+        overflow: visible;
+      }
+    }
+
+    @media (max-width: 900px) {
+      .topbar {
+        grid-template-columns: 1fr;
+      }
+
+      .command-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .command-panel--jobs {
+        grid-column: 1 / -1;
+      }
+    }
+
+    @media (max-width: 780px) {
+      .command-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .playback-bar {
+        grid-template-columns: 1fr;
+      }
+
+      .time-cluster {
+        justify-items: start;
+      }
+
+      #episodeWorkspace .track-wrap,
+      #episodeWorkspace svg.track {
+        min-height: 340px;
+      }
     }
   </style>
 </head>
@@ -643,205 +1315,264 @@
   <div class="shell">
     <section class="topbar">
       <div class="brand">
-        <p class="eyebrow">AGV Replay / Train / Test</p>
-        <h1 class="headline">Circular Track Simulation Workbench</h1>
+        <p class="eyebrow">AGV Workspace</p>
+        <h1 class="headline">AGV 测试回放工作台</h1>
         <p class="subline">
-          统一查看训练、测试与离线回放。页面会展示 `visualizer.py` 中的轨道视图、车辆状态、上下料站细节、货物字段、告警和历史统计，并在本地服务模式下直接调用 train / test。
+          回放数据驱动舞台，模型就绪状态与当前工作区规则仅用于对照和确定性测试发起。
         </p>
       </div>
       <aside class="status-board">
         <div class="status-pill" id="bootStatus" data-tone="warn">正在检查本地服务与回放数据</div>
         <div class="small" id="workspaceHint">工作区尚未连接本地后端时，页面仍可打开嵌入式 episode 回放。</div>
-        <div class="mono" id="runtimeMeta">模式: 未初始化</div>
+        <div class="status-inline">
+          <div class="mono" id="runtimeMeta">模式: 未初始化</div>
+          <div class="small" id="topologyInline">当前视图: 等待初始化</div>
+        </div>
       </aside>
     </section>
 
     <section class="command-grid">
-      <form class="command-panel" id="trainForm">
-        <h2 class="panel-title">训练任务</h2>
-        <p class="panel-copy">通过本地 Python 服务运行 `TrainingManager`。每个 episode 都会落盘为可回放产物，并在训练结束后保存 `best` 与 `final` 两组模型。</p>
-        <div class="form-grid">
-          <div class="field">
-            <label for="trainEpisodes">Episode 数</label>
-            <input id="trainEpisodes" type="number" min="1" step="1" value="5" />
-          </div>
-          <div class="field">
-            <label for="trainSampleInterval">回放采样间隔 (s)</label>
-            <input id="trainSampleInterval" type="number" min="0.5" step="0.5" value="5.0" />
-          </div>
-          <div class="field full">
-            <label>说明</label>
-            <div class="empty">训练 episode 时长仍使用 [config.py](/E:/Desktop/coding/gitclone/Work/AGV/config.py) 中的 `EPISODE_DURATION`。页面仅负责触发任务、管理模型和保存可回放产物。</div>
-          </div>
+      <section class="command-panel command-panel--summary" id="testEntryPanel">
+        <div class="panel-header-inline">
+          <h2 class="panel-title">测试入口 / 模型就绪</h2>
+          <button class="secondary inline-button" id="openModelsButton" type="button">打开 Models</button>
         </div>
-        <div class="command-actions">
-          <button id="trainButton" type="submit">启动训练</button>
-          <button class="secondary" id="refreshButton" type="button">刷新状态</button>
-        </div>
-      </form>
+        <p class="panel-copy">先在 Models 中确认覆盖情况，再发起确定性测试。</p>
+        <div class="chip-row" id="testEntryChips"></div>
+        <div class="empty" id="testEntryStatus">等待模型扫描结果。</div>
+      </section>
 
-      <form class="command-panel" id="testForm">
-        <h2 class="panel-title">测试任务</h2>
-        <p class="panel-copy">选择当前项目中的模型组进行 deterministic 推理测试。每个测试 episode 都会保存独立回放，可直接在下方列表中切换。</p>
-        <div class="form-grid">
-          <div class="field full">
-            <label for="modelSelect">模型组</label>
-            <select id="modelSelect"></select>
-          </div>
-          <div class="field">
-            <label for="testEpisodes">Episode 数</label>
-            <input id="testEpisodes" type="number" min="1" step="1" value="1" />
-          </div>
-          <div class="field">
-            <label for="testSeed">起始 Seed</label>
-            <input id="testSeed" type="number" min="0" step="1" value="42" />
-          </div>
-          <div class="field">
-            <label for="testSampleInterval">回放采样间隔 (s)</label>
-            <input id="testSampleInterval" type="number" min="0.5" step="0.5" value="5.0" />
-          </div>
-          <div class="field">
-            <label for="testDuration">仿真时长 (s)</label>
-            <input id="testDuration" type="number" min="1" step="1" value="28800" />
-          </div>
+      <section class="command-panel command-panel--jobs">
+        <div class="panel-header-inline">
+          <h2 class="panel-title">最近测试任务</h2>
+          <span class="panel-copy">仅显示 test 任务</span>
         </div>
-        <div class="command-actions">
-          <button id="testButton" type="submit">启动测试</button>
-        </div>
-      </form>
-
-      <section class="command-panel">
-        <h2 class="panel-title">任务监控</h2>
-        <p class="panel-copy">这里显示 train / test 当前任务的进度、最近生成的 episode，以及模型保存结果。</p>
         <div class="job-stack" id="jobList"></div>
       </section>
     </section>
 
     <section class="workspace">
       <section class="stage-panel">
-        <div class="stage-head">
-          <div>
-            <h2 id="episodeTitle">尚未载入 episode</h2>
-            <div class="panel-copy" id="episodeSubtitle">可通过下方 Episode Library 选择已有回放，或先启动 train / test。</div>
-          </div>
-          <div class="meta" id="episodeMeta">等待数据</div>
-        </div>
+        <div class="stage-layout">
+          <aside class="library-dock">
+            <div class="dock-head">
+              <div>
+                <h2 class="panel-title">回放库</h2>
+                <p class="panel-copy" id="libraryCaption">在测试回放之间切换，并对比 recorded topology 与当前工作区。</p>
+              </div>
+              <div class="tab-row">
+                <button class="tab-button active" id="episodesTab" type="button">回放</button>
+                <button class="tab-button" id="modelsTab" type="button">模型</button>
+              </div>
+            </div>
+            <div class="list-stack" id="episodeLibrary"></div>
+            <div class="list-stack hidden" id="modelLibrary"></div>
+            <div class="empty dock-detail" id="librarySelectionMeta">在左侧选择条目后，这里会显示简要信息。</div>
+            <button class="secondary hidden" id="copySelectionButton" type="button">复制当前路径</button>
+          </aside>
 
-        <div class="playback-bar">
-          <button id="playButton" type="button">播放</button>
-          <input id="timeSlider" type="range" min="0" max="0" step="1" value="0" />
-          <div class="time-cluster">
-            <div class="time-main" id="timeLabel">00:00:00</div>
-            <div class="time-sub" id="frameLabel">Frame 0 / 0</div>
-          </div>
-          <select id="speedSelect">
-            <option value="0.5">0.5x</option>
-            <option value="1" selected>1x</option>
-            <option value="2">2x</option>
-            <option value="4">4x</option>
-          </select>
-        </div>
+          <div class="stage-focus">
+            <section class="stage-shell" id="episodeWorkspace">
+              <div class="compat-banner">
+                <span class="compat-pill" id="compatibilityBadge" data-status="mismatch">等待对照</span>
+                <div>
+                  <strong id="compatibilityHeadline">录制拓扑与当前工作区</strong>
+                  <div class="panel-copy" id="compatibilitySummary">尚未载入回放，无法比较历史录制拓扑与当前工作区配置。</div>
+                </div>
+              </div>
 
-        <div class="track-wrap">
-          <svg id="trackCanvas" class="track" viewBox="-120 -120 240 240" aria-label="AGV circular track"></svg>
-        </div>
+              <div class="stage-head">
+                <div>
+                  <h2 id="episodeTitle">尚未载入 episode</h2>
+                  <div class="panel-copy" id="episodeSubtitle">从左侧切换已有回放，或先在 Models 中完成确定性测试。</div>
+                </div>
+                <div class="meta" id="episodeMeta">等待数据</div>
+              </div>
 
-        <div class="legend">
-          <span class="l-vehicle0">Vehicle 0</span>
-          <span class="l-vehicle1">Vehicle 1</span>
-          <span class="l-loading">Loading station</span>
-          <span class="l-unloading">Unloading station</span>
-          <span class="l-busy">装卸中</span>
-        </div>
+              <div class="playback-bar">
+                <button id="playButton" type="button">播放</button>
+                <input id="timeSlider" type="range" min="0" max="0" step="1" value="0" />
+                <div class="time-cluster">
+                  <div class="time-main" id="timeLabel">00:00:00</div>
+                  <div class="time-sub" id="frameLabel">帧 0 / 0</div>
+                </div>
+                <select id="speedSelect">
+                  <option value="0.5">0.5x</option>
+                  <option value="1" selected>1x</option>
+                  <option value="2">2x</option>
+                  <option value="4">4x</option>
+                </select>
+              </div>
 
-        <section class="chart-grid">
-          <div class="chart-card">
-            <div class="chart-label">完成 / 超时</div>
-            <svg id="chartCompleted" class="chart-svg" viewBox="0 0 300 150"></svg>
+              <div class="track-wrap">
+                <svg id="trackCanvas" class="track" viewBox="0 0 1240 540" aria-label="轨道视图"></svg>
+              </div>
+
+              <div class="legend" id="trackLegend"></div>
+
+              <section class="topology-grid topology-grid--triple">
+                <section class="context-panel diff-panel">
+                  <h2 class="panel-title">拓扑差异</h2>
+                  <p class="panel-copy" id="topologyDeltaSummary">等待对照信息。</p>
+                  <div class="kv tight" id="topologyDelta"></div>
+                </section>
+                <section class="context-panel">
+                  <h2 class="panel-title">录制回放数据</h2>
+                  <p class="panel-copy" id="recordedTopologySummary">录制拓扑由回放 episode 推导。</p>
+                  <div class="kv tight" id="recordedTopology"></div>
+                </section>
+                <section class="context-panel">
+                  <h2 class="panel-title">当前工作区配置</h2>
+                  <p class="panel-copy" id="currentConfigSummary">当前工作区布局和规则来自 config.py。</p>
+                  <div class="kv tight" id="currentConfigList"></div>
+                </section>
+              </section>
+            </section>
+
+            <section class="stage-shell hidden" id="modelWorkspace">
+              <div class="model-hero">
+                <div>
+                  <h2 id="modelWorkspaceTitle">当前模型工作区</h2>
+                  <p class="panel-copy" id="modelWorkspaceLead">从左侧模型浏览器选择模型，查看覆盖情况与测试可用性。</p>
+                </div>
+                <div class="meta" id="modelWorkspaceMeta">等待模型</div>
+              </div>
+
+              <div class="model-status-grid">
+                <div class="data-card compact">
+                  <strong>模型覆盖</strong>
+                  <div class="chip-row" id="modelCoverageChips"></div>
+                  <div class="kv tight" id="modelWorkspaceList"></div>
+                </div>
+                <div class="data-card compact">
+                  <strong>模型路径</strong>
+                  <div class="kv tight" id="modelPathList"></div>
+                </div>
+              </div>
+
+              <div class="model-workspace-grid">
+                <div class="data-card">
+                  <strong>工作区匹配</strong>
+                  <div class="detail-note">这里说明当前工作区需要什么、选中模型已经覆盖了什么，以及为什么可以或不能立即发起测试。</div>
+                  <div class="kv tight" id="modelRequirementList"></div>
+                </div>
+
+                <form class="command-panel inline-test-panel" id="testForm">
+                  <h2 class="panel-title">测试启动</h2>
+                  <p class="panel-copy">使用当前选中模型或其它完整模型组直接发起确定性测试。</p>
+                  <div class="form-grid">
+                    <div class="field full">
+                      <label for="modelSelect">模型组</label>
+                      <select id="modelSelect"></select>
+                    </div>
+                    <div class="field">
+                      <label for="testEpisodes">Episode 数</label>
+                      <input id="testEpisodes" type="number" min="1" step="1" value="1" />
+                    </div>
+                    <div class="field">
+                      <label for="testSeed">起始 Seed</label>
+                      <input id="testSeed" type="number" min="0" step="1" value="42" />
+                    </div>
+                    <div class="field">
+                      <label for="testSampleInterval">回放采样间隔 (s)</label>
+                      <input id="testSampleInterval" type="number" min="0.5" step="0.5" value="5.0" />
+                    </div>
+                    <div class="field">
+                      <label for="testDuration">仿真时长 (s)</label>
+                      <input id="testDuration" type="number" min="1" step="1" value="28800" />
+                    </div>
+                    <div class="field full">
+                      <label>当前测试状态</label>
+                      <div class="empty" id="testHint">等待模型扫描结果。</div>
+                    </div>
+                  </div>
+                  <div class="command-actions">
+                    <button id="testButton" type="submit">启动测试</button>
+                  </div>
+                </form>
+              </div>
+            </section>
           </div>
-          <div class="chart-card">
-            <div class="chart-label">平均等待时间</div>
-            <svg id="chartWait" class="chart-svg" viewBox="0 0 300 150"></svg>
-          </div>
-          <div class="chart-card">
-            <div class="chart-label">系统货物数</div>
-            <svg id="chartCargo" class="chart-svg" viewBox="0 0 300 150"></svg>
-          </div>
-          <div class="chart-card">
-            <div class="chart-label">车辆速度</div>
-            <svg id="chartVelocity" class="chart-svg" viewBox="0 0 300 150"></svg>
-          </div>
-          <div class="chart-card wide">
-            <div class="chart-label">车辆位置轨迹</div>
-            <svg id="chartPosition" class="chart-svg" viewBox="0 0 620 150"></svg>
-          </div>
-        </section>
+        </div>
       </section>
 
       <aside class="rail">
-        <section class="rail-panel">
+        <section class="rail-panel episodes-only" id="metricsPanel">
           <h2 class="panel-title">系统指标</h2>
           <div class="metric-grid" id="metricGrid"></div>
         </section>
 
-        <section class="rail-panel">
+        <section class="rail-panel episodes-only" id="vehiclesPanel">
           <h2 class="panel-title">车辆状态</h2>
           <div class="data-list" id="vehicleList"></div>
         </section>
 
-        <section class="rail-panel">
+        <section class="rail-panel episodes-only" id="loadingPanel">
           <h2 class="panel-title">上料口状态</h2>
           <div class="data-list" id="loadingList"></div>
         </section>
 
-        <section class="rail-panel">
+        <section class="rail-panel episodes-only" id="unloadingPanel">
           <h2 class="panel-title">下料口状态</h2>
           <div class="data-list" id="unloadingList"></div>
         </section>
 
-        <section class="rail-panel">
-          <h2 class="panel-title">等待货物</h2>
-          <div class="data-list" id="waitingCargoList"></div>
+        <section class="rail-panel episodes-only" id="activityPanel">
+          <h2 class="panel-title">活动摘要</h2>
+          <div class="data-list" id="activityList"></div>
         </section>
 
-        <section class="rail-panel">
-          <h2 class="panel-title">活跃货物</h2>
-          <div class="data-list" id="activeCargoList"></div>
+        <section class="rail-panel shared-panel" id="workspaceRulesPanel">
+          <h2 class="panel-title">当前工作区规则</h2>
+          <div class="data-list" id="workspaceRulesList"></div>
         </section>
 
-        <section class="rail-panel">
-          <h2 class="panel-title">最近完成货物</h2>
-          <div class="data-list" id="completedList"></div>
-        </section>
-
-        <section class="rail-panel">
-          <h2 class="panel-title">最近告警</h2>
-          <div class="data-list" id="alertList"></div>
-        </section>
-
-        <section class="rail-panel">
-          <h2 class="panel-title">回放元数据</h2>
+        <section class="rail-panel episodes-only" id="summaryPanel">
+          <h2 class="panel-title">运行上下文与数据来源</h2>
           <div class="data-list" id="summaryList"></div>
         </section>
+
+        <section class="rail-panel models-only hidden" id="modelSidePanel">
+          <h2 class="panel-title">当前工作区与最近任务</h2>
+          <div class="data-list" id="modelSideList"></div>
+        </section>
       </aside>
-    </section>
-
-    <section class="library-grid">
-      <section class="library-panel">
-        <h2 class="panel-title">Episode Library</h2>
-        <p class="panel-copy">训练和测试生成的每个 episode 都会在这里留档，点击即可切换到对应回放。</p>
-        <div class="list-stack" id="episodeLibrary"></div>
-      </section>
-
-      <section class="library-panel">
-        <h2 class="panel-title">Model Library</h2>
-        <p class="panel-copy">按 `*_v0.pth / *_v1.pth` 自动聚合成模型组。训练完成后会出现新的 `*_best` 和 `*_final` 模型可直接测试。</p>
-        <div class="list-stack" id="modelLibrary"></div>
-      </section>
     </section>
   </div>
   <script>
     window.__SIMULATION_BOOTSTRAP__ = null;
+    const query = new URLSearchParams(location.search);
+    const TRACK_DEBUG = query.get("track_debug") === "1";
+    const EPISODE_CACHE_LIMIT = 2;
+    const trackShapeConfig = {
+      profile: "natural",
+      profiles: {
+        natural: {
+          sampleCount: 96,
+          debugSampleStride: 12,
+          bottomLine: {
+            start: { x: 0, y: 1 },
+            end: { x: 1, y: 1 },
+          },
+          topLine: {
+            start: { x: 1, y: 0 },
+            end: { x: 0, y: 0 },
+          },
+          rightCurve: {
+            start: { x: 1, y: 1 },
+            control1: { x: 1.18, y: 0.92 },
+            control2: { x: 1.1, y: 0.08 },
+            end: { x: 1, y: 0 },
+          },
+          leftCurve: {
+            start: { x: 0, y: 0 },
+            control1: { x: -0.08, y: 0.12 },
+            control2: { x: -0.18, y: 0.88 },
+            end: { x: 0, y: 1 },
+          },
+        },
+      },
+    };
 
     const state = {
       hasApi: location.protocol.startsWith("http"),
@@ -851,52 +1582,82 @@
       jobs: [],
       models: [],
       episodes: [],
+      configSnapshot: null,
       currentEpisodeId: null,
+      selectedModelId: query.get("model_id") || null,
+      preferredEpisodeId: query.get("episode_id") || null,
       currentIndex: 0,
+      activeLibraryTab: query.get("tab") === "models" ? "models" : "episodes",
       playing: false,
       timerId: null,
+      refreshPromise: null,
+      episodePromise: null,
+      episodeAbortController: null,
+      episodeRequestToken: 0,
+      episodeCache: new Map(),
+      loadingEpisodeId: null,
+      refreshIntervalId: null,
     };
 
     const dom = {
       bootStatus: document.getElementById("bootStatus"),
       workspaceHint: document.getElementById("workspaceHint"),
       runtimeMeta: document.getElementById("runtimeMeta"),
-      trainForm: document.getElementById("trainForm"),
+      topologyInline: document.getElementById("topologyInline"),
+      openModelsButton: document.getElementById("openModelsButton"),
+      testEntryChips: document.getElementById("testEntryChips"),
+      testEntryStatus: document.getElementById("testEntryStatus"),
       testForm: document.getElementById("testForm"),
-      trainEpisodes: document.getElementById("trainEpisodes"),
-      trainSampleInterval: document.getElementById("trainSampleInterval"),
       modelSelect: document.getElementById("modelSelect"),
       testEpisodes: document.getElementById("testEpisodes"),
       testSeed: document.getElementById("testSeed"),
       testSampleInterval: document.getElementById("testSampleInterval"),
       testDuration: document.getElementById("testDuration"),
-      refreshButton: document.getElementById("refreshButton"),
+      testHint: document.getElementById("testHint"),
       jobList: document.getElementById("jobList"),
+      episodesTab: document.getElementById("episodesTab"),
+      modelsTab: document.getElementById("modelsTab"),
+      libraryCaption: document.getElementById("libraryCaption"),
       episodeTitle: document.getElementById("episodeTitle"),
       episodeSubtitle: document.getElementById("episodeSubtitle"),
       episodeMeta: document.getElementById("episodeMeta"),
+      compatibilityBadge: document.getElementById("compatibilityBadge"),
+      compatibilityHeadline: document.getElementById("compatibilityHeadline"),
+      compatibilitySummary: document.getElementById("compatibilitySummary"),
       playButton: document.getElementById("playButton"),
       timeSlider: document.getElementById("timeSlider"),
       speedSelect: document.getElementById("speedSelect"),
       timeLabel: document.getElementById("timeLabel"),
       frameLabel: document.getElementById("frameLabel"),
       trackCanvas: document.getElementById("trackCanvas"),
+      trackLegend: document.getElementById("trackLegend"),
+      topologyDeltaSummary: document.getElementById("topologyDeltaSummary"),
+      topologyDelta: document.getElementById("topologyDelta"),
+      recordedTopologySummary: document.getElementById("recordedTopologySummary"),
+      recordedTopology: document.getElementById("recordedTopology"),
+      currentConfigSummary: document.getElementById("currentConfigSummary"),
+      currentConfigList: document.getElementById("currentConfigList"),
+      episodeWorkspace: document.getElementById("episodeWorkspace"),
+      modelWorkspace: document.getElementById("modelWorkspace"),
+      modelWorkspaceTitle: document.getElementById("modelWorkspaceTitle"),
+      modelWorkspaceLead: document.getElementById("modelWorkspaceLead"),
+      modelWorkspaceMeta: document.getElementById("modelWorkspaceMeta"),
+      modelCoverageChips: document.getElementById("modelCoverageChips"),
+      modelWorkspaceList: document.getElementById("modelWorkspaceList"),
+      modelPathList: document.getElementById("modelPathList"),
+      modelRequirementList: document.getElementById("modelRequirementList"),
       metricGrid: document.getElementById("metricGrid"),
       vehicleList: document.getElementById("vehicleList"),
       loadingList: document.getElementById("loadingList"),
       unloadingList: document.getElementById("unloadingList"),
-      waitingCargoList: document.getElementById("waitingCargoList"),
-      activeCargoList: document.getElementById("activeCargoList"),
-      completedList: document.getElementById("completedList"),
-      alertList: document.getElementById("alertList"),
+      activityList: document.getElementById("activityList"),
+      workspaceRulesList: document.getElementById("workspaceRulesList"),
       summaryList: document.getElementById("summaryList"),
+      modelSideList: document.getElementById("modelSideList"),
       episodeLibrary: document.getElementById("episodeLibrary"),
       modelLibrary: document.getElementById("modelLibrary"),
-      chartCompleted: document.getElementById("chartCompleted"),
-      chartWait: document.getElementById("chartWait"),
-      chartCargo: document.getElementById("chartCargo"),
-      chartVelocity: document.getElementById("chartVelocity"),
-      chartPosition: document.getElementById("chartPosition"),
+      librarySelectionMeta: document.getElementById("librarySelectionMeta"),
+      copySelectionButton: document.getElementById("copySelectionButton"),
     };
 
     const palette = ["#d4513d", "#c48d28", "#6656b3", "#77573f"];
@@ -930,6 +1691,33 @@
       return `${hh}:${mm}:${ss}`;
     }
 
+    function rememberEpisodePayload(payload) {
+      const episodeId = payload?.summary?.episode_id;
+      if (!episodeId) return;
+      if (state.episodeCache.has(episodeId)) {
+        state.episodeCache.delete(episodeId);
+      }
+      state.episodeCache.set(episodeId, payload);
+      while (state.episodeCache.size > EPISODE_CACHE_LIMIT) {
+        const oldestEpisodeId = state.episodeCache.keys().next().value;
+        state.episodeCache.delete(oldestEpisodeId);
+      }
+    }
+
+    function cachedEpisodePayload(episodeId) {
+      if (!state.episodeCache.has(episodeId)) {
+        return null;
+      }
+      const payload = state.episodeCache.get(episodeId);
+      state.episodeCache.delete(episodeId);
+      state.episodeCache.set(episodeId, payload);
+      return payload;
+    }
+
+    function activeEpisodeListId() {
+      return state.loadingEpisodeId || state.currentEpisodeId;
+    }
+
     function currentFrames() {
       return state.episode?.frames || [];
     }
@@ -940,6 +1728,132 @@
 
     function currentStatistics() {
       return state.episode?.statistics || {};
+    }
+
+    function currentMetadata() {
+      return state.episode?.metadata || {};
+    }
+
+    function currentConfigSnapshot() {
+      return currentMetadata().config_snapshot || state.configSnapshot || null;
+    }
+
+    function asNumberList(values) {
+      if (!Array.isArray(values)) return [];
+      return values
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value));
+    }
+
+    function asIntList(values) {
+      if (!Array.isArray(values)) return [];
+      return [...new Set(values.map((value) => Number(value)).filter((value) => Number.isFinite(value)).map((value) => Math.trunc(value)))].sort((a, b) => a - b);
+    }
+
+    function topologyText(topology) {
+      if (!topology) return "unknown vehicles / unknown IP / unknown OP";
+      const vehicleCount = Number.isFinite(Number(topology.vehicle_count)) ? Number(topology.vehicle_count) : null;
+      const loadingCount = Number.isFinite(Number(topology.loading_station_count)) ? Number(topology.loading_station_count) : null;
+      const unloadingCount = Number.isFinite(Number(topology.unloading_station_count)) ? Number(topology.unloading_station_count) : null;
+      const vehicleText = vehicleCount == null ? "unknown vehicles" : `${vehicleCount} vehicles`;
+      const loadingText = loadingCount == null ? "unknown IP" : `${loadingCount} IP`;
+      const unloadingText = unloadingCount == null ? "unknown OP" : `${unloadingCount} OP`;
+      return `${vehicleText} / ${loadingText} / ${unloadingText}`;
+    }
+
+    function inferRecordedTopologyFromClient() {
+      const summary = currentSummary();
+      const frame = currentFrame(0);
+      const loadingPositions = asNumberList(summary.loading_positions || (frame.loading_stations || []).map((station) => station.position));
+      const unloadingPositions = asNumberList(summary.unloading_positions || (frame.unloading_stations || []).map((station) => station.position));
+      const frameVehicleIds = asIntList((frame.vehicles || []).map((vehicle) => vehicle.id));
+      const modelVehicleIds = asIntList(Object.keys(summary.model_mapping || {}));
+      const vehicleIds = frameVehicleIds.length ? frameVehicleIds : modelVehicleIds;
+      return {
+        vehicle_ids: vehicleIds,
+        vehicle_count: vehicleIds.length || null,
+        loading_positions: loadingPositions,
+        loading_station_count: loadingPositions.length || null,
+        unloading_positions: unloadingPositions,
+        unloading_station_count: unloadingPositions.length || null,
+        model_vehicle_ids: modelVehicleIds,
+        summary_text: topologyText({
+          vehicle_count: vehicleIds.length || null,
+          loading_station_count: loadingPositions.length || null,
+          unloading_station_count: unloadingPositions.length || null,
+        }),
+      };
+    }
+
+    function inferCurrentWorkspaceTopology() {
+      const snapshot = currentConfigSnapshot() || {};
+      const vehicleLayout = snapshot.vehicle_layout || {};
+      const stations = snapshot.stations || {};
+      const requiredVehicleIds = asIntList(vehicleLayout.required_vehicle_ids || []);
+      const loadingPositions = asNumberList(stations.loading_positions || snapshot.loading_positions || []);
+      const unloadingPositions = asNumberList(stations.unloading_positions || snapshot.unloading_positions || []);
+      const vehicleCount = requiredVehicleIds.length || Number(snapshot.environment?.max_vehicles || null);
+      return {
+        vehicle_ids: requiredVehicleIds,
+        vehicle_count: vehicleCount || null,
+        loading_positions: loadingPositions,
+        loading_station_count: loadingPositions.length || null,
+        unloading_positions: unloadingPositions,
+        unloading_station_count: unloadingPositions.length || null,
+        track_length: Number(snapshot.environment?.track_length || snapshot.track_length || null) || null,
+        summary_text: topologyText({
+          vehicle_count: vehicleCount || null,
+          loading_station_count: loadingPositions.length || null,
+          unloading_station_count: unloadingPositions.length || null,
+        }),
+      };
+    }
+
+    function compareTopologies(recorded, current) {
+      const differences = [];
+      if ((recorded?.vehicle_count ?? null) !== (current?.vehicle_count ?? null)) {
+        differences.push(`车辆 ${recorded?.vehicle_count ?? "unknown"} -> ${current?.vehicle_count ?? "unknown"}`);
+      }
+      if ((recorded?.loading_station_count ?? null) !== (current?.loading_station_count ?? null)) {
+        differences.push(`上料口 ${recorded?.loading_station_count ?? "unknown"} -> ${current?.loading_station_count ?? "unknown"}`);
+      }
+      if ((recorded?.unloading_station_count ?? null) !== (current?.unloading_station_count ?? null)) {
+        differences.push(`下料口 ${recorded?.unloading_station_count ?? "unknown"} -> ${current?.unloading_station_count ?? "unknown"}`);
+      }
+      if ((recorded?.loading_positions || []).length && (current?.loading_positions || []).length && JSON.stringify(recorded.loading_positions) !== JSON.stringify(current.loading_positions)) {
+        differences.push("上料位置不同");
+      }
+      if ((recorded?.unloading_positions || []).length && (current?.unloading_positions || []).length && JSON.stringify(recorded.unloading_positions) !== JSON.stringify(current.unloading_positions)) {
+        differences.push("下料位置不同");
+      }
+      const status = differences.length ? "mismatch" : "match";
+      return {
+        status,
+        recorded_text: topologyText(recorded),
+        current_text: topologyText(current),
+        summary_line: `录制: ${topologyText(recorded)} · 当前: ${topologyText(current)}`,
+        message: status === "match"
+          ? "Recorded 回放与当前工作区使用同一套拓扑。"
+          : "Recorded 回放始终为准；当前工作区只用于 rerun today 和就绪检查。",
+        differences,
+      };
+    }
+
+    function currentRecordedTopology() {
+      return currentMetadata().recorded_topology || inferRecordedTopologyFromClient();
+    }
+
+    function currentWorkspaceTopology() {
+      return currentMetadata().current_workspace_topology || inferCurrentWorkspaceTopology();
+    }
+
+    function currentTopologyCompatibility() {
+      return currentMetadata().topology_compatibility || compareTopologies(currentRecordedTopology(), currentWorkspaceTopology());
+    }
+
+    function idsText(values) {
+      if (!Array.isArray(values) || !values.length) return "--";
+      return values.map((value) => `V${value}`).join(", ");
     }
 
     function currentFrame(index = state.currentIndex) {
@@ -981,125 +1895,629 @@
       return Number(currentSummary().track_length || 100);
     }
 
-    function toPoint(position, radius = 82) {
-      const angle = (-2 * Math.PI * Number(position || 0) / trackLength()) + Math.PI / 2;
+    function normalizePosition(position) {
+      const length = trackLength();
+      if (!length) return 0;
+      let normalized = Number(position || 0) % length;
+      if (normalized < 0) normalized += length;
+      return normalized;
+    }
+
+    function clamp(value, min, max) {
+      return Math.min(Math.max(value, min), max);
+    }
+
+    function sortedFiniteUnique(values) {
+      if (!Array.isArray(values)) return [];
+      return [...new Set(values.map((value) => Number(value)).filter((value) => Number.isFinite(value)))].sort((a, b) => a - b);
+    }
+
+    function lerp(start, end, ratio) {
+      return start + ((end - start) * ratio);
+    }
+
+    function lerpPoint(start, end, ratio) {
       return {
-        x: radius * Math.cos(angle),
-        y: radius * Math.sin(angle),
-        angle,
+        x: lerp(start.x, end.x, ratio),
+        y: lerp(start.y, end.y, ratio),
       };
+    }
+
+    function distanceBetween(start, end) {
+      return Math.hypot(end.x - start.x, end.y - start.y);
+    }
+
+    function angleBetween(start, end) {
+      return (Math.atan2(end.y - start.y, end.x - start.x) * 180) / Math.PI;
+    }
+
+    function cubicBezierPoint(start, control1, control2, end, t) {
+      const mt = 1 - t;
+      const mt2 = mt * mt;
+      const t2 = t * t;
+      return {
+        x: (mt2 * mt * start.x) + (3 * mt2 * t * control1.x) + (3 * mt * t2 * control2.x) + (t2 * t * end.x),
+        y: (mt2 * mt * start.y) + (3 * mt2 * t * control1.y) + (3 * mt * t2 * control2.y) + (t2 * t * end.y),
+      };
+    }
+
+    function cubicBezierTangent(start, control1, control2, end, t) {
+      const mt = 1 - t;
+      return {
+        x: (3 * mt * mt * (control1.x - start.x)) + (6 * mt * t * (control2.x - control1.x)) + (3 * t * t * (end.x - control2.x)),
+        y: (3 * mt * mt * (control1.y - start.y)) + (6 * mt * t * (control2.y - control1.y)) + (3 * t * t * (end.y - control2.y)),
+      };
+    }
+
+    function resolveTrackProfile() {
+      return trackShapeConfig.profiles[trackShapeConfig.profile] || trackShapeConfig.profiles.natural;
+    }
+
+    function resolveNormalizedTrackPoint(point, leftX, rightX, topY, bottomY) {
+      return {
+        x: leftX + ((rightX - leftX) * Number(point.x || 0)),
+        y: topY + ((bottomY - topY) * Number(point.y || 0)),
+      };
+    }
+
+    function buildBezierLookup(start, control1, control2, end, sampleCount = 96) {
+      const safeSamples = Math.max(24, Number(sampleCount) || 96);
+      const samples = [{ t: 0, point: { ...start }, length: 0 }];
+      let previous = start;
+      let totalLength = 0;
+      for (let index = 1; index <= safeSamples; index += 1) {
+        const t = index / safeSamples;
+        const point = cubicBezierPoint(start, control1, control2, end, t);
+        totalLength += distanceBetween(previous, point);
+        samples.push({ t, point, length: totalLength });
+        previous = point;
+      }
+      return {
+        start,
+        control1,
+        control2,
+        end,
+        samples,
+        totalLength,
+      };
+    }
+
+    function pointOnLineSegment(start, end, ratio) {
+      const safeRatio = clamp(ratio, 0, 1);
+      const point = lerpPoint(start, end, safeRatio);
+      return {
+        x: point.x,
+        y: point.y,
+        angleDeg: angleBetween(start, end),
+      };
+    }
+
+    function pointOnBezierLookup(lookup, ratio) {
+      const safeRatio = clamp(ratio, 0, 1);
+      if (!lookup || !lookup.samples?.length || lookup.totalLength <= 0) {
+        return {
+          x: lookup?.start?.x ?? 0,
+          y: lookup?.start?.y ?? 0,
+          angleDeg: 0,
+        };
+      }
+      const targetLength = safeRatio * lookup.totalLength;
+      let upperIndex = lookup.samples.findIndex((sample) => sample.length >= targetLength);
+      if (upperIndex < 0) {
+        upperIndex = lookup.samples.length - 1;
+      }
+      const upper = lookup.samples[upperIndex];
+      const lower = lookup.samples[Math.max(upperIndex - 1, 0)];
+      const span = Math.max(upper.length - lower.length, 1e-9);
+      const localRatio = clamp((targetLength - lower.length) / span, 0, 1);
+      const t = lerp(lower.t, upper.t, localRatio);
+      const point = cubicBezierPoint(lookup.start, lookup.control1, lookup.control2, lookup.end, t);
+      const tangent = cubicBezierTangent(lookup.start, lookup.control1, lookup.control2, lookup.end, t);
+      return {
+        x: point.x,
+        y: point.y,
+        angleDeg: (Math.atan2(tangent.y, tangent.x) * 180) / Math.PI,
+      };
+    }
+
+    function buildTrackGeometry() {
+      const width = 1240;
+      const height = 540;
+      const leftX = 170;
+      const rightX = 1070;
+      const centerX = (leftX + rightX) / 2;
+      const topY = 160;
+      const bottomY = 380;
+      const centerY = (topY + bottomY) / 2;
+      const straightLength = rightX - leftX;
+      const profile = resolveTrackProfile();
+      const resolvePoint = (point) => resolveNormalizedTrackPoint(point, leftX, rightX, topY, bottomY);
+      const segments = {
+        bottomLine: {
+          start: resolvePoint(profile.bottomLine.start),
+          end: resolvePoint(profile.bottomLine.end),
+        },
+        rightCurve: {
+          start: resolvePoint(profile.rightCurve.start),
+          control1: resolvePoint(profile.rightCurve.control1),
+          control2: resolvePoint(profile.rightCurve.control2),
+          end: resolvePoint(profile.rightCurve.end),
+        },
+        topLine: {
+          start: resolvePoint(profile.topLine.start),
+          end: resolvePoint(profile.topLine.end),
+        },
+        leftCurve: {
+          start: resolvePoint(profile.leftCurve.start),
+          control1: resolvePoint(profile.leftCurve.control1),
+          control2: resolvePoint(profile.leftCurve.control2),
+          end: resolvePoint(profile.leftCurve.end),
+        },
+      };
+      segments.rightLookup = buildBezierLookup(
+        segments.rightCurve.start,
+        segments.rightCurve.control1,
+        segments.rightCurve.control2,
+        segments.rightCurve.end,
+        profile.sampleCount,
+      );
+      segments.leftLookup = buildBezierLookup(
+        segments.leftCurve.start,
+        segments.leftCurve.control1,
+        segments.leftCurve.control2,
+        segments.leftCurve.end,
+        profile.sampleCount,
+      );
+      const segmentLengths = {
+        bottom: distanceBetween(segments.bottomLine.start, segments.bottomLine.end),
+        right: segments.rightLookup.totalLength,
+        top: distanceBetween(segments.topLine.start, segments.topLine.end),
+        left: segments.leftLookup.totalLength,
+      };
+      return {
+        width,
+        height,
+        leftX,
+        rightX,
+        centerX,
+        centerY,
+        topY,
+        bottomY,
+        straightLength,
+        profile,
+        segments,
+        segmentLengths,
+        pathLength: segmentLengths.bottom + segmentLengths.right + segmentLengths.top + segmentLengths.left,
+        loadingY: 84,
+        unloadingY: 456,
+        loadingTitleY: 48,
+        unloadingTitleY: 506,
+      };
+    }
+
+    function stationStatusText(station, kind) {
+      if (kind === "loading") {
+        const totalSlots = station.slots?.length ?? 0;
+        return `${station.occupied_slots ?? 0}/${totalSlots} busy`;
+      }
+      return station.description || "Ready";
+    }
+
+    function trackPath(geometry) {
+      const { bottomLine, rightCurve, topLine, leftCurve } = geometry.segments;
+      return [
+        `M ${bottomLine.start.x} ${bottomLine.start.y}`,
+        `L ${bottomLine.end.x} ${bottomLine.end.y}`,
+        `C ${rightCurve.control1.x} ${rightCurve.control1.y} ${rightCurve.control2.x} ${rightCurve.control2.y} ${rightCurve.end.x} ${rightCurve.end.y}`,
+        `L ${topLine.end.x} ${topLine.end.y}`,
+        `C ${leftCurve.control1.x} ${leftCurve.control1.y} ${leftCurve.control2.x} ${leftCurve.control2.y} ${leftCurve.end.x} ${leftCurve.end.y}`,
+      ].join(" ");
+    }
+
+    function positionToPerimeterPoint(position, geometry = buildTrackGeometry()) {
+      const length = trackLength();
+      const distance = length > 0
+        ? (normalizePosition(position) / length) * geometry.pathLength
+        : 0;
+      const { bottom, right, top } = geometry.segmentLengths;
+      const { bottomLine, rightLookup, topLine, leftLookup } = geometry.segments;
+
+      if (distance <= bottom) {
+        return pointOnLineSegment(bottomLine.start, bottomLine.end, distance / Math.max(bottom, 1e-9));
+      }
+      if (distance <= bottom + right) {
+        return pointOnBezierLookup(rightLookup, (distance - bottom) / Math.max(right, 1e-9));
+      }
+      if (distance <= bottom + right + top) {
+        return pointOnLineSegment(topLine.start, topLine.end, (distance - bottom - right) / Math.max(top, 1e-9));
+      }
+      return pointOnBezierLookup(leftLookup, (distance - bottom - right - top) / Math.max(geometry.segmentLengths.left, 1e-9));
+    }
+
+    function buildTrackTopologyMapper(summary = currentSummary(), geometry = buildTrackGeometry()) {
+      const loadingPositions = sortedFiniteUnique(summary.loading_positions || []);
+      const unloadingPositions = sortedFiniteUnique(summary.unloading_positions || []);
+      const totalLength = Number(summary.track_length || trackLength() || 100) || 100;
+      const continuous = loadingPositions.length > 0
+        && unloadingPositions.length > 0
+        && unloadingPositions[unloadingPositions.length - 1] < loadingPositions[0];
+
+      const fallbackStationAnchor = (position, kind) => {
+        const positions = kind === "loading" ? loadingPositions : unloadingPositions;
+        const normalizedPosition = normalizePosition(position);
+        let index = positions.findIndex((value) => Math.abs(value - normalizedPosition) < 1e-6);
+        if (index < 0) {
+          index = positions.findIndex((value) => value > normalizedPosition);
+        }
+        if (index < 0) {
+          index = positions.length - 1;
+        }
+        const ratio = positions.length <= 1 ? 0.5 : index / Math.max(positions.length - 1, 1);
+        const x = kind === "loading"
+          ? geometry.rightX - (ratio * geometry.straightLength)
+          : geometry.leftX + (ratio * geometry.straightLength);
+        return {
+          x: clamp(x, geometry.leftX + 34, geometry.rightX - 34),
+          y: kind === "loading" ? geometry.loadingY : geometry.unloadingY,
+        };
+      };
+
+      if (!continuous) {
+        return {
+          mode: "fallback",
+          positionToTrackPoint: (position) => positionToPerimeterPoint(position, geometry),
+          positionToStationAnchor: fallbackStationAnchor,
+        };
+      }
+
+      const unloadingMin = unloadingPositions[0];
+      const unloadingMax = unloadingPositions[unloadingPositions.length - 1];
+      const loadingMin = loadingPositions[0];
+      const loadingMax = loadingPositions[loadingPositions.length - 1];
+      const bottomSpan = Math.max(unloadingMax - unloadingMin, 1e-9);
+      const rightArcSpan = Math.max(loadingMin - unloadingMax, 1e-9);
+      const topSpan = Math.max(loadingMax - loadingMin, 1e-9);
+      const leftArcSpan = Math.max((totalLength - loadingMax) + unloadingMin, 1e-9);
+      const pointOnBottom = (ratio) => pointOnLineSegment(geometry.segments.bottomLine.start, geometry.segments.bottomLine.end, ratio);
+      const pointOnTop = (ratio) => pointOnLineSegment(geometry.segments.topLine.start, geometry.segments.topLine.end, ratio);
+      const pointOnRightArc = (ratio) => pointOnBezierLookup(geometry.segments.rightLookup, ratio);
+      const pointOnLeftArc = (ratio) => pointOnBezierLookup(geometry.segments.leftLookup, ratio);
+
+      const positionToTrackPoint = (position) => {
+        const normalized = normalizePosition(position);
+        if (normalized >= unloadingMin && normalized <= unloadingMax) {
+          return pointOnBottom((normalized - unloadingMin) / bottomSpan);
+        }
+        if (normalized > unloadingMax && normalized < loadingMin) {
+          return pointOnRightArc((normalized - unloadingMax) / rightArcSpan);
+        }
+        if (normalized >= loadingMin && normalized <= loadingMax) {
+          return pointOnTop((normalized - loadingMin) / topSpan);
+        }
+        const leftDistance = normalized >= loadingMax
+          ? normalized - loadingMax
+          : (totalLength - loadingMax) + normalized;
+        return pointOnLeftArc(leftDistance / leftArcSpan);
+      };
+
+      return {
+        mode: "continuous",
+        loadingPositions,
+        unloadingPositions,
+        positionToTrackPoint,
+        positionToStationAnchor: (position, kind) => {
+          const point = positionToTrackPoint(position);
+          return {
+            x: clamp(point.x, geometry.leftX + 34, geometry.rightX - 34),
+            y: kind === "loading" ? geometry.loadingY : geometry.unloadingY,
+          };
+        },
+      };
+    }
+
+    function positionToTrackPoint(position, geometry = buildTrackGeometry(), summary = currentSummary()) {
+      return buildTrackTopologyMapper(summary, geometry).positionToTrackPoint(position);
+    }
+
+    function positionToStationAnchor(position, kind, geometry = buildTrackGeometry(), summary = currentSummary()) {
+      return buildTrackTopologyMapper(summary, geometry).positionToStationAnchor(position, kind);
+    }
+
+    function renderTrackDebug(svg, geometry) {
+      if (!TRACK_DEBUG) return;
+      const group = createSvg("g", { "data-track-debug": "true" });
+      const appendLine = (start, end, color, dash = "8 6") => {
+        group.appendChild(createSvg("line", {
+          x1: start.x,
+          y1: start.y,
+          x2: end.x,
+          y2: end.y,
+          stroke: color,
+          "stroke-width": 1.5,
+          "stroke-dasharray": dash,
+          "stroke-linecap": "round",
+          opacity: 0.9,
+        }));
+      };
+      const appendPoint = (point, color, label, radius = 4) => {
+        group.appendChild(createSvg("circle", {
+          cx: point.x,
+          cy: point.y,
+          r: radius,
+          fill: color,
+          stroke: "white",
+          "stroke-width": 1.1,
+        }));
+        if (label) {
+          const text = createSvg("text", {
+            x: point.x + 8,
+            y: point.y - 8,
+            fill: color,
+            "font-size": 9,
+            "font-family": "Cascadia Mono, Consolas, monospace",
+            "font-weight": 700,
+          });
+          text.textContent = label;
+          group.appendChild(text);
+        }
+      };
+      const { bottomLine, rightCurve, topLine, leftCurve, rightLookup, leftLookup } = geometry.segments;
+      appendLine(rightCurve.start, rightCurve.control1, "#d97706");
+      appendLine(rightCurve.control1, rightCurve.control2, "#d97706");
+      appendLine(rightCurve.control2, rightCurve.end, "#d97706");
+      appendLine(leftCurve.start, leftCurve.control1, "#2563eb");
+      appendLine(leftCurve.control1, leftCurve.control2, "#2563eb");
+      appendLine(leftCurve.control2, leftCurve.end, "#2563eb");
+
+      appendPoint(bottomLine.start, "#475569", "B0");
+      appendPoint(bottomLine.end, "#475569", "B1");
+      appendPoint(topLine.start, "#475569", "T0");
+      appendPoint(topLine.end, "#475569", "T1");
+      appendPoint(rightCurve.control1, "#d97706", "R1", 4.5);
+      appendPoint(rightCurve.control2, "#d97706", "R2", 4.5);
+      appendPoint(leftCurve.control1, "#2563eb", "L1", 4.5);
+      appendPoint(leftCurve.control2, "#2563eb", "L2", 4.5);
+
+      const sampleStride = Math.max(1, Number(geometry.profile.debugSampleStride || 12));
+      [rightLookup, leftLookup].forEach((lookup, curveIndex) => {
+        lookup.samples.forEach((sample, sampleIndex) => {
+          if (sampleIndex === 0 || sampleIndex === lookup.samples.length - 1 || sampleIndex % sampleStride !== 0) return;
+          appendPoint(sample.point, curveIndex === 0 ? "rgba(217, 119, 6, 0.75)" : "rgba(37, 99, 235, 0.75)", "", 2.3);
+        });
+      });
+      svg.appendChild(group);
     }
 
     function renderTrack(frame) {
       const svg = dom.trackCanvas;
+      const geometry = buildTrackGeometry();
+      const topologyMapper = buildTrackTopologyMapper(currentSummary(), geometry);
       svg.innerHTML = "";
+      svg.setAttribute("viewBox", `0 0 ${geometry.width} ${geometry.height}`);
 
-      svg.appendChild(createSvg("circle", { cx: 0, cy: 0, r: 82, fill: "none", stroke: "#b5964b", "stroke-width": 7 }));
-      svg.appendChild(createSvg("circle", {
-        cx: 0,
-        cy: 0,
-        r: 70,
+      const primaryPath = trackPath(geometry);
+      const bandLabel = (text, x, y, fill) => {
+        const node = createSvg("text", {
+          x,
+          y,
+          fill,
+          "font-size": 12,
+          "font-family": "Bahnschrift, Segoe UI, sans-serif",
+          "font-weight": 700,
+          "letter-spacing": 0.8,
+        });
+        node.textContent = text;
+        return node;
+      };
+
+      svg.appendChild(createSvg("path", {
+        d: primaryPath,
         fill: "none",
-        stroke: "rgba(31, 44, 50, 0.18)",
-        "stroke-width": 1.5,
-        "stroke-dasharray": "4 6",
+        stroke: "#b5964b",
+        "stroke-width": 64,
+        "stroke-linecap": "round",
+        "stroke-linejoin": "round",
+      }));
+      svg.appendChild(createSvg("path", {
+        d: primaryPath,
+        fill: "none",
+        stroke: "rgba(31, 44, 50, 0.14)",
+        "stroke-width": 26,
+        "stroke-linecap": "round",
+        "stroke-linejoin": "round",
+      }));
+      svg.appendChild(createSvg("path", {
+        d: primaryPath,
+        fill: "none",
+        stroke: "rgba(255,255,255,0.72)",
+        "stroke-width": 3,
+        "stroke-dasharray": "12 14",
+        "stroke-linecap": "round",
+        "stroke-linejoin": "round",
+      }));
+      renderTrackDebug(svg, geometry);
+      svg.appendChild(createSvg("line", {
+        x1: geometry.centerX,
+        y1: geometry.topY - 24,
+        x2: geometry.centerX,
+        y2: geometry.topY + 24,
+        stroke: "rgba(31, 44, 50, 0.25)",
+        "stroke-width": 3,
+        "stroke-dasharray": "8 6",
       }));
 
-      (frame.loading_stations || []).forEach((station) => {
-        const point = toPoint(station.position);
-        svg.appendChild(createSvg("rect", {
-          x: point.x - 6, y: point.y - 6, width: 12, height: 12, rx: 3,
-          fill: "#4b9f5f", stroke: "#2b6137", "stroke-width": 1.4,
-        }));
-        const label = createSvg("text", {
-          x: point.x + 9, y: point.y - 8, "font-size": 6, fill: "#275a34",
-          "font-family": "Cascadia Mono, Consolas, monospace",
-        });
-        label.textContent = `IP${station.id}`;
-        svg.appendChild(label);
+      svg.appendChild(createSvg("line", {
+        x1: geometry.leftX - 20,
+        y1: geometry.loadingY + 24,
+        x2: geometry.rightX + 20,
+        y2: geometry.loadingY + 24,
+        stroke: "rgba(75, 159, 95, 0.15)",
+        "stroke-width": 2,
+      }));
+      svg.appendChild(createSvg("line", {
+        x1: geometry.leftX - 20,
+        y1: geometry.unloadingY - 24,
+        x2: geometry.rightX + 20,
+        y2: geometry.unloadingY - 24,
+        stroke: "rgba(77, 121, 199, 0.15)",
+        "stroke-width": 2,
+      }));
+      svg.appendChild(bandLabel("Loading band", 68, geometry.loadingTitleY, "#2b6137"));
+      svg.appendChild(bandLabel("Unloading band", 68, geometry.unloadingTitleY, "#264f95"));
 
-        (station.slots || []).forEach((slot) => {
-          if (!slot.occupied) return;
-          const offset = slot.slot_index === 0 ? 7 : -7;
-          const cargoX = point.x + offset * Math.cos(point.angle + Math.PI / 2);
-          const cargoY = point.y + offset * Math.sin(point.angle + Math.PI / 2);
-          svg.appendChild(createSvg("rect", {
-            x: cargoX - 2.4, y: cargoY - 2.4, width: 4.8, height: 4.8,
-            fill: "#f0c44f", stroke: "#b8781d", "stroke-width": 0.8,
-          }));
-          const cargoLabel = createSvg("text", {
-            x: cargoX, y: cargoY - 4.8, "font-size": 4.5, "text-anchor": "middle",
-            fill: "#173742", "font-family": "Cascadia Mono, Consolas, monospace",
-          });
-          cargoLabel.textContent = slot.destination_text || "";
-          svg.appendChild(cargoLabel);
-        });
-      });
+      const renderStation = (station, kind) => {
+        const isLoading = kind === "loading";
+        const trackPoint = topologyMapper.positionToStationAnchor(station.position, kind);
+        const anchorPoint = topologyMapper.positionToTrackPoint(station.position);
+        const cardX = trackPoint.x;
+        const cardY = isLoading ? geometry.loadingY - 24 : geometry.unloadingY - 6;
+        const cardCenterY = cardY + 15;
+        const toneFill = isLoading ? "#4b9f5f" : "#4d79c7";
+        const toneStroke = isLoading ? "#2b6137" : "#264f95";
+        const detail = stationStatusText(station, kind);
 
-      (frame.unloading_stations || []).forEach((station) => {
-        const point = toPoint(station.position);
-        svg.appendChild(createSvg("rect", {
-          x: point.x - 6, y: point.y - 6, width: 12, height: 12, rx: 2.5,
-          fill: "#4d79c7", stroke: "#264f95", "stroke-width": 1.4,
+        svg.appendChild(createSvg("line", {
+          x1: anchorPoint.x,
+          y1: anchorPoint.y,
+          x2: cardX,
+          y2: cardCenterY,
+          stroke: isLoading ? "rgba(75, 159, 95, 0.34)" : "rgba(77, 121, 199, 0.34)",
+          "stroke-width": 2.4,
         }));
-        const label = createSvg("text", {
-          x: point.x + 9, y: point.y + 12, "font-size": 6, fill: "#264f95",
-          "font-family": "Cascadia Mono, Consolas, monospace",
+        svg.appendChild(createSvg("circle", {
+          cx: anchorPoint.x,
+          cy: anchorPoint.y,
+          r: 4.5,
+          fill: toneFill,
+          stroke: toneStroke,
+          "stroke-width": 1.2,
+        }));
+        svg.appendChild(createSvg("rect", {
+          x: cardX - 34,
+          y: cardY,
+          width: 68,
+          height: 30,
+          rx: 10,
+          fill: isLoading ? "rgba(75, 159, 95, 0.14)" : "rgba(77, 121, 199, 0.14)",
+          stroke: toneStroke,
+          "stroke-width": 1.2,
+        }));
+
+        const title = createSvg("text", {
+          x: cardX,
+          y: cardY + 12,
+          fill: toneStroke,
+          "font-size": 9.5,
+          "font-family": "Bahnschrift, Segoe UI, sans-serif",
+          "font-weight": 700,
+          "text-anchor": "middle",
         });
-        label.textContent = `OP${station.id}`;
-        svg.appendChild(label);
-      });
+        title.textContent = `${isLoading ? "IP" : "OP"}${station.id}`;
+        svg.appendChild(title);
+
+        const detailText = createSvg("text", {
+          x: cardX,
+          y: cardY + 24,
+          fill: "#516166",
+          "font-size": 6.2,
+          "font-family": "Cascadia Mono, Consolas, monospace",
+          "text-anchor": "middle",
+        });
+        detailText.textContent = detail;
+        svg.appendChild(detailText);
+      };
+
+      (frame.loading_stations || []).forEach((station) => renderStation(station, "loading"));
+      (frame.unloading_stations || []).forEach((station) => renderStation(station, "unloading"));
 
       (frame.vehicles || []).forEach((vehicle) => {
-        const point = toPoint(vehicle.position);
+        const point = topologyMapper.positionToTrackPoint(vehicle.position);
         const color = palette[vehicle.id % palette.length];
-        svg.appendChild(createSvg("circle", {
-          cx: point.x, cy: point.y, r: 7, fill: color,
+        const group = createSvg("g", {
+          transform: `translate(${point.x} ${point.y}) rotate(${point.angleDeg})`,
+        });
+        group.appendChild(createSvg("rect", {
+          x: -16,
+          y: -9,
+          width: 32,
+          height: 18,
+          rx: 6,
+          fill: color,
           stroke: vehicle.is_loading_unloading ? "#7d2f24" : "#21353c",
           "stroke-width": vehicle.is_loading_unloading ? 3 : 1.8,
         }));
-
-        if (Math.abs(Number(vehicle.velocity || 0)) > 0.1) {
-          const tangent = point.angle - Math.PI / 2;
-          const arrowLength = Math.min(Math.abs(Number(vehicle.velocity || 0)) * 2.2, 14);
-          const endX = point.x + arrowLength * Math.cos(tangent);
-          const endY = point.y + arrowLength * Math.sin(tangent);
-          svg.appendChild(createSvg("line", {
-            x1: point.x, y1: point.y, x2: endX, y2: endY,
-            stroke: "#f0c44f", "stroke-width": 2.2, "stroke-linecap": "round",
+        group.appendChild(createSvg("rect", {
+          x: -6,
+          y: -4,
+          width: 12,
+          height: 8,
+          rx: 2.5,
+          fill: "rgba(255,255,255,0.28)",
+          stroke: "rgba(255,255,255,0.5)",
+          "stroke-width": 0.8,
+        }));
+        if (Number(vehicle.slot_count || 0) > 0) {
+          group.appendChild(createSvg("circle", {
+            cx: 12,
+            cy: -7,
+            r: 4.5,
+            fill: "#f0c44f",
+            stroke: "#8a6317",
+            "stroke-width": 0.8,
           }));
-          svg.appendChild(createSvg("circle", { cx: endX, cy: endY, r: 1.8, fill: "#f0c44f" }));
+          const cargoCount = createSvg("text", {
+            x: 12,
+            y: -5.4,
+            fill: "#453003",
+            "font-size": 6,
+            "font-family": "Cascadia Mono, Consolas, monospace",
+            "text-anchor": "middle",
+            "font-weight": 700,
+          });
+          cargoCount.textContent = String(vehicle.slot_count ?? 0);
+          group.appendChild(cargoCount);
         }
-
         const label = createSvg("text", {
-          x: point.x, y: point.y + 2, "font-size": 4.8, "text-anchor": "middle",
-          fill: "white", "font-weight": "700", "font-family": "Bahnschrift, Segoe UI, sans-serif",
+          x: 0,
+          y: 3.5,
+          fill: "white",
+          "font-size": 8,
+          "font-weight": 700,
+          "font-family": "Bahnschrift, Segoe UI, sans-serif",
+          "text-anchor": "middle",
+          transform: `rotate(${-point.angleDeg})`,
         });
         label.textContent = `V${vehicle.id}`;
-        svg.appendChild(label);
-
-        if (Number(vehicle.slot_count || 0) > 0) {
-          const cargoLabel = createSvg("text", {
-            x: point.x * 0.84, y: point.y * 0.84, "font-size": 5, "text-anchor": "middle",
-            fill: "#5d4308", "font-family": "Cascadia Mono, Consolas, monospace",
-          });
-          cargoLabel.textContent = vehicle.cargo_label || `Box x${vehicle.slot_count}`;
-          svg.appendChild(cargoLabel);
-        }
+        group.appendChild(label);
+        svg.appendChild(group);
       });
+    }
+
+    function renderTrackLegend(frame) {
+      const vehicles = frame.vehicles || [];
+      const vehicleLegend = vehicles.map((vehicle) => {
+        const safeId = Number(vehicle.id) % 4;
+        return `<span class="l-vehicle${safeId}">车辆 ${escapeHtml(vehicle.id)}</span>`;
+      }).join("");
+      dom.trackLegend.innerHTML = `
+        ${vehicleLegend || '<span class="l-vehicle0">暂无车辆</span>'}
+        <span class="l-loading">上料口</span>
+        <span class="l-unloading">下料口</span>
+        <span class="l-busy">忙碌车辆</span>
+      `;
     }
 
     function renderMetrics(frame) {
       const system = frame.system || {};
       const metrics = [
-        ["完成货物", system.completed_cargos ?? 0],
+        ["已完成货物", system.completed_cargos ?? 0],
         ["超时货物", system.timed_out_cargos ?? 0],
-        ["平均等待(s)", number(system.avg_wait_time ?? 0, 1)],
-        ["当前货物", system.current_cargos ?? 0],
+        ["平均等待 (s)", number(system.avg_wait_time ?? 0, 1)],
+        ["活跃货物", system.current_cargos ?? 0],
         ["等待货物", system.waiting_cargos ?? 0],
-        ["在车货物", system.on_vehicle_cargos ?? 0],
-        ["告警数", system.safety_warning_count ?? 0],
-        ["碰撞数", system.collision_alert_count ?? 0],
+        ["车载货物", system.on_vehicle_cargos ?? 0],
+        ["安全警告", system.safety_warning_count ?? 0],
+        ["碰撞告警", system.collision_alert_count ?? 0],
       ];
       dom.metricGrid.innerHTML = metrics.map(([label, value]) => `
         <div class="metric">
@@ -1115,33 +2533,31 @@
         dom.vehicleList.innerHTML = '<div class="empty">当前帧没有车辆数据。</div>';
         return;
       }
-      dom.vehicleList.innerHTML = vehicles.map((vehicle) => {
-        const slots = (vehicle.slots || []).map((slot) => {
-          if (!slot.occupied) {
-            return `<div>工位 ${slot.slot_index + 1}: <code>Empty</code></div>`;
-          }
-          return `<div>工位 ${slot.slot_index + 1}: <code>C${slot.cargo_id}</code> -> <code>${escapeHtml(slot.destination_text || "--")}</code></div>`;
-        }).join("");
-        const operation = vehicle.operation || {};
-        const chips = [
-          `<span class="chip ${vehicle.is_loading_unloading ? "warn" : "ok"}">${escapeHtml(vehicle.status_text || "Ready")}</span>`,
-        ];
-        if (operation.remaining_time != null) {
-          chips.push(`<span class="chip alt">剩余 ${number(operation.remaining_time, 1)}s</span>`);
-        }
-        return `
-          <div class="data-card">
-            <strong>Vehicle ${vehicle.id}</strong>
-            <div class="chip-row">${chips.join("")}</div>
-            <div class="kv">
-              <div>位置: <code>${number(vehicle.position, 2)}</code></div>
-              <div>速度: <code>${number(vehicle.velocity, 2)}</code></div>
-              <div>载货数: <code>${vehicle.slot_count ?? 0}</code></div>
-            </div>
-            <div class="kv">${slots}</div>
-          </div>
-        `;
-      }).join("");
+      dom.vehicleList.innerHTML = `
+        <div class="table-shell">
+          ${vehicles.map((vehicle) => {
+            const slots = (vehicle.slots || []).map((slot) => {
+              if (!slot.occupied) return `S${slot.slot_index + 1}: 空闲`;
+              return `S${slot.slot_index + 1}: C${slot.cargo_id} -> ${escapeHtml(slot.destination_text || "--")}`;
+            }).join(" 路 ");
+            const operation = vehicle.operation || {};
+            const secondary = operation.remaining_time != null
+              ? `${escapeHtml(vehicle.status_text || "就绪")} · 剩余 ${number(operation.remaining_time, 1)}s`
+              : escapeHtml(vehicle.status_text || "就绪");
+            return `
+              <div class="table-row">
+                <div>
+                  <div class="table-title">V${escapeHtml(vehicle.id)}</div>
+                  <div class="table-sub">${secondary}</div>
+                </div>
+                <div class="table-sub">位置 <span class="table-code">${number(vehicle.position, 2)}</span></div>
+                <div class="table-sub">速度 <span class="table-code">${number(vehicle.velocity, 2)}</span> · 槽位 <span class="table-code">${vehicle.slot_count ?? 0}</span></div>
+                <div class="table-sub">${slots || "暂无槽位详情"}</div>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      `;
     }
 
     function renderLoadingStations(frame) {
@@ -1150,37 +2566,29 @@
         dom.loadingList.innerHTML = '<div class="empty">当前帧没有上料口数据。</div>';
         return;
       }
-      dom.loadingList.innerHTML = stations.map((station) => {
-        const slots = (station.slots || []).map((slot) => {
-          if (!slot.occupied) {
-            return `<div>工位 ${slot.slot_index + 1}: <code>Empty</code></div>`;
-          }
-          const chips = [`<span class="chip">${slot.destination_text ? escapeHtml(slot.destination_text) : "--"}</span>`];
-          if (slot.assigned_vehicle != null) {
-            chips.push(`<span class="chip alt">V${slot.assigned_vehicle} / S${(slot.assigned_vehicle_slot ?? 0) + 1}</span>`);
-          }
-          if (slot.is_timeout) {
-            chips.push('<span class="chip warn">Timeout</span>');
-          }
-          return `
-            <div>
-              工位 ${slot.slot_index + 1}: <code>C${slot.cargo_id}</code>
-              <div class="chip-row">${chips.join("")}</div>
-              <div class="mono">等待 ${number(slot.wait_time, 1)}s</div>
-            </div>
-          `;
-        }).join("");
-        return `
-          <div class="data-card">
-            <strong>IP${station.id}</strong>
-            <div class="kv">
-              <div>位置: <code>${number(station.position, 2)}</code></div>
-              <div>占用工位: <code>${station.occupied_slots}</code></div>
-            </div>
-            <div class="kv">${slots}</div>
-          </div>
-        `;
-      }).join("");
+      dom.loadingList.innerHTML = `
+        <div class="table-shell">
+          ${stations.map((station) => {
+            const slots = (station.slots || []).map((slot) => {
+              if (!slot.occupied) return `S${slot.slot_index + 1}: 空闲`;
+              const assigned = slot.assigned_vehicle != null ? ` -> V${slot.assigned_vehicle}` : "";
+              const timeout = slot.is_timeout ? " · Timeout" : "";
+              return `S${slot.slot_index + 1}: C${slot.cargo_id}${assigned}${timeout}`;
+            }).join(" 路 ");
+            return `
+              <div class="table-row">
+                <div>
+                  <div class="table-title">IP${station.id}</div>
+                  <div class="table-sub">占用 ${station.occupied_slots ?? 0}</div>
+                </div>
+                <div class="table-sub">位置 <span class="table-code">${number(station.position, 2)}</span></div>
+                <div class="table-sub">${(station.slots || []).length} 槽位</div>
+                <div class="table-sub">${slots || "暂无槽位详情"}</div>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      `;
     }
 
     function renderUnloadingStations(frame) {
@@ -1189,34 +2597,43 @@
         dom.unloadingList.innerHTML = '<div class="empty">当前帧没有下料口数据。</div>';
         return;
       }
-      dom.unloadingList.innerHTML = stations.map((station) => `
-        <div class="data-card">
-          <strong>OP${station.id}</strong>
-          <div class="kv">
-            <div>位置: <code>${number(station.position, 2)}</code></div>
-            <div>${escapeHtml(station.description || "Unlimited receiving")}</div>
-          </div>
+      dom.unloadingList.innerHTML = `
+        <div class="table-shell">
+          ${stations.map((station) => `
+            <div class="table-row">
+              <div>
+                <div class="table-title">OP${station.id}</div>
+                <div class="table-sub">${escapeHtml(station.mode || "模式未知")}</div>
+              </div>
+              <div class="table-sub">位置 <span class="table-code">${number(station.position, 2)}</span></div>
+              <div class="table-sub">接收策略</div>
+              <div class="table-sub">${escapeHtml(station.description || "无限接收")}</div>
+            </div>
+          `).join("")}
         </div>
-      `).join("");
+      `;
     }
 
     function renderWaitingCargos(frame) {
       const cargos = frame.waiting_cargos || [];
       if (!cargos.length) {
-        dom.waitingCargoList.innerHTML = '<div class="empty">当前没有等待中的货物。</div>';
+        dom.waitingCargoList.innerHTML = '<div class="empty">当前帧没有等待中的货物。</div>';
         return;
       }
       dom.waitingCargoList.innerHTML = cargos.map((cargo) => `
-        <div class="data-card">
+        <div class="data-card compact">
           <strong>C${cargo.id}</strong>
           <div class="chip-row">
             <span class="chip">${escapeHtml(cargo.destination_text || "--")}</span>
-            ${cargo.is_timeout ? '<span class="chip warn">Timeout</span>' : '<span class="chip ok">Waiting</span>'}
+            ${cargo.is_timeout ? '<span class="chip warn">超时</span>' : '<span class="chip ok">等待中</span>'}
             ${cargo.assigned_vehicle != null ? `<span class="chip alt">V${cargo.assigned_vehicle}</span>` : ""}
+            ${cargo.paper_type ? `<span class="chip alt">${escapeHtml(cargo.paper_type)}</span>` : ""}
+            ${cargo.required_slots != null ? `<span class="chip">槽位 ${escapeHtml(cargo.required_slots)}</span>` : ""}
           </div>
           <div class="kv">
-            <div>上料口: <code>IP${cargo.loading_station}</code> / 工位 <code>${(cargo.loading_slot ?? 0) + 1}</code></div>
+            <div>上料口: <code>IP${cargo.loading_station}</code> / 槽位 <code>${(cargo.loading_slot ?? 0) + 1}</code></div>
             <div>等待时间: <code>${number(cargo.wait_time, 1)}s</code></div>
+            ${cargo.primary_unloading_station != null ? `<div>主下料口: <code>OP${cargo.primary_unloading_station}</code></div>` : ""}
           </div>
         </div>
       `).join("");
@@ -1225,7 +2642,7 @@
     function renderActiveCargos(frame) {
       const cargos = frame.active_cargos || [];
       if (!cargos.length) {
-        dom.activeCargoList.innerHTML = '<div class="empty">当前没有活跃货物。</div>';
+        dom.activeCargoList.innerHTML = '<div class="empty">当前帧没有活跃货物。</div>';
         return;
       }
       dom.activeCargoList.innerHTML = cargos.map((cargo) => {
@@ -1236,12 +2653,14 @@
           locationText = `V${cargo.location.vehicle_id} / S${(cargo.location.vehicle_slot_index ?? 0) + 1}`;
         }
         return `
-          <div class="data-card">
+          <div class="data-card compact">
             <strong>C${cargo.id}</strong>
             <div class="chip-row">
-              <span class="chip">${escapeHtml(cargo.destination_text || "--")}</span>
-              ${cargo.is_timeout ? '<span class="chip warn">Timeout</span>' : ""}
+            <span class="chip">${escapeHtml(cargo.destination_text || "--")}</span>
+              ${cargo.is_timeout ? '<span class="chip warn">超时</span>' : ""}
               ${cargo.target_unloading_station != null ? `<span class="chip alt">OP${cargo.target_unloading_station}</span>` : ""}
+              ${cargo.paper_type ? `<span class="chip alt">${escapeHtml(cargo.paper_type)}</span>` : ""}
+              ${cargo.required_slots != null ? `<span class="chip">槽位 ${escapeHtml(cargo.required_slots)}</span>` : ""}
             </div>
             <div class="kv">
               <div>位置: <code>${escapeHtml(locationText)}</code></div>
@@ -1263,7 +2682,7 @@
         return;
       }
       dom.completedList.innerHTML = items.slice().reverse().map((cargo) => `
-        <div class="data-card">
+        <div class="data-card compact">
           <strong>C${cargo.id}</strong>
           <div class="chip-row">
             <span class="chip ok">IP${cargo.loading_station} -> OP${cargo.unloading_station}</span>
@@ -1284,7 +2703,7 @@
         return;
       }
       dom.alertList.innerHTML = alerts.slice().reverse().map((alert) => `
-        <div class="data-card">
+        <div class="data-card compact">
           <strong>${escapeHtml(String(alert.level || "").toUpperCase())}</strong>
           <div class="chip-row">
             <span class="chip ${alert.level === "collision" ? "warn" : "alt"}">${escapeHtml(alert.vehicle_ids?.map((id) => `V${id}`).join(" / ") || "--")}</span>
@@ -1297,54 +2716,519 @@
       `).join("");
     }
 
+    function compactPath(rawPath) {
+      if (!rawPath) return "--";
+      const normalized = String(rawPath).replaceAll("\\", "/");
+      const parts = normalized.split("/").filter(Boolean);
+      return parts.length <= 3 ? normalized : parts.slice(-3).join("/");
+    }
+
+    function pathCode(rawPath, displayPath) {
+      const label = displayPath || compactPath(rawPath);
+      if (!label || label === "--") {
+        return "<code>--</code>";
+      }
+      const title = rawPath ? ` title="${escapeHtml(rawPath)}"` : "";
+      return `<code${title}>${escapeHtml(label)}</code>`;
+    }
+
+    function positionsText(values) {
+      if (!Array.isArray(values) || !values.length) return "--";
+      return values.map((value) => number(value, 1)).join(", ");
+    }
+
+    function jobStatusClass(status) {
+      if (status === "completed") return "ok";
+      if (status === "failed") return "warn";
+      return "alt";
+    }
+
+    function currentSelectedModel() {
+      if (!state.models.length) {
+        state.selectedModelId = null;
+        return null;
+      }
+      const activeId = state.selectedModelId || dom.modelSelect.value || state.models[0].id;
+      const selected = state.models.find((model) => model.id === activeId) || state.models[0];
+      state.selectedModelId = selected?.id || null;
+      return selected || null;
+    }
+
+    function currentTestModel() {
+      if (!state.models.length) {
+        return null;
+      }
+      const modelId = dom.modelSelect.value || state.selectedModelId;
+      return state.models.find((model) => model.id === modelId) || null;
+    }
+
+    function selectedModelReadyForTest() {
+      const testModel = currentTestModel();
+      return Boolean(state.apiEnabled && testModel && testModel.complete_for_current_config);
+    }
+
+    function renderLibrarySelectionDetail() {
+      if (state.activeLibraryTab === "models") {
+        const model = currentSelectedModel();
+        if (!model) {
+          dom.librarySelectionMeta.textContent = "当前没有可选模型。";
+          dom.copySelectionButton.classList.add("hidden");
+          dom.copySelectionButton.dataset.copy = "";
+          return;
+        }
+        const displayPaths = Object.entries(model.display_paths || model.paths || {});
+        dom.librarySelectionMeta.innerHTML = `
+          <strong>当前选中模型</strong>
+          <div class="kv tight">
+            <div>状态: <code>${model.complete_for_current_config ? "可用" : "阻塞"}</code></div>
+            <div>更新时间: <code>${escapeHtml(model.updated_at || "--")}</code></div>
+            <div>已覆盖车辆: <code>${escapeHtml(idsText(model.vehicle_ids || []))}</code></div>
+            <div>缺失车辆: <code>${escapeHtml(idsText(model.missing_vehicle_ids || []))}</code></div>
+            <div>原因: <code>${escapeHtml(model.completeness_reason || "--")}</code></div>
+          </div>
+        `;
+        dom.copySelectionButton.classList.remove("hidden");
+        dom.copySelectionButton.dataset.copy = displayPaths.map(([vehicleId, path]) => `V${vehicleId}: ${path}`).join("\n");
+        dom.copySelectionButton.textContent = "复制模型路径";
+        return;
+      }
+
+      const visibleEpisodes = state.episodes.filter((item) => item.kind === "test");
+      const episode = visibleEpisodes.find((item) => item.episode_id === state.currentEpisodeId);
+      if (!episode) {
+        dom.librarySelectionMeta.textContent = "在左侧选择条目后，这里会显示简要回放信息。";
+        dom.copySelectionButton.classList.add("hidden");
+        dom.copySelectionButton.dataset.copy = "";
+        return;
+      }
+
+      dom.librarySelectionMeta.innerHTML = `
+        <strong>当前选中回放</strong>
+        <div class="kv tight">
+          <div>时间: <code>${escapeHtml(episode.created_at || "--")}</code></div>
+          <div>控制器: <code>${escapeHtml(episode.controller_mode || "--")}</code></div>
+          <div>拓扑: <code>${escapeHtml(episode.topology_compatibility?.summary_line || episode.recorded_topology?.summary_text || "--")}</code></div>
+          <div>回放产物: <code>${escapeHtml(episode.report_path_display || "--")}</code></div>
+        </div>
+      `;
+      dom.copySelectionButton.classList.remove("hidden");
+      dom.copySelectionButton.dataset.copy = episode.report_path || "";
+      dom.copySelectionButton.textContent = "复制回放路径";
+    }
+
+    function renderTestEntryPanel() {
+      const selectedModel = currentSelectedModel();
+      const completeCount = state.models.filter((model) => model.complete_for_current_config).length;
+      const requiredVehicleIds = idsText(currentWorkspaceTopology().vehicle_ids || []);
+
+      dom.testEntryChips.innerHTML = `
+        <span class="chip alt">完整模型 ${completeCount}</span>
+        <span class="chip">要求 ${escapeHtml(requiredVehicleIds)}</span>
+        ${selectedModel ? `<span class="chip ${selectedModel.complete_for_current_config ? "ok" : "warn"}">${selectedModel.complete_for_current_config ? "可测试" : "已阻塞"}</span>` : ""}
+      `;
+      dom.testEntryStatus.textContent = selectedModel
+        ? (selectedModel.completeness_reason || "当前模型状态可直接用于测试。")
+        : (state.models.length ? "从 Models 中选择一个模型以查看覆盖情况。" : "当前还没有可识别的模型组。");
+    }
+
+    function renderModelWorkspace() {
+      const selectedModel = currentSelectedModel();
+      if (!selectedModel) {
+        dom.modelWorkspaceTitle.textContent = "当前模型工作区";
+        dom.modelWorkspaceLead.textContent = "从左侧模型浏览器选择模型，查看覆盖情况与测试可用性。";
+        dom.modelWorkspaceMeta.textContent = "等待模型";
+        dom.modelCoverageChips.innerHTML = "";
+        dom.modelWorkspaceList.innerHTML = "<div>当前没有可用模型。</div>";
+        dom.modelPathList.innerHTML = "<div>没有模型路径可显示。</div>";
+        dom.modelRequirementList.innerHTML = "<div>等待模型扫描结果。</div>";
+        return;
+      }
+
+      const requiredVehicleIds = idsText(selectedModel.required_vehicle_ids || []);
+      const foundVehicleIds = idsText(selectedModel.vehicle_ids || []);
+      const missingVehicleIds = idsText(selectedModel.missing_vehicle_ids || []);
+      const selectedSummary = currentSummary();
+
+      dom.modelWorkspaceTitle.textContent = selectedModel.id;
+      dom.modelWorkspaceLead.textContent = selectedModel.complete_for_current_config
+        ? "这个模型组已覆盖当前工作区要求，可直接发起确定性测试。"
+        : "这个模型组暂未覆盖当前工作区要求，请查看覆盖情况与阻塞原因。";
+      dom.modelWorkspaceMeta.innerHTML = `
+        可用: ${selectedModel.complete_for_current_config ? "是" : "否"}<br/>
+        选中: ${escapeHtml(selectedSummary.selected_model_id || selectedModel.id)}<br/>
+        更新时间: ${escapeHtml(selectedModel.updated_at || "--")}
+      `;
+      dom.modelCoverageChips.innerHTML = `
+        <span class="chip alt">已发现 ${escapeHtml(foundVehicleIds)}</span>
+        <span class="chip">必需 ${escapeHtml(requiredVehicleIds)}</span>
+        <span class="chip ${selectedModel.complete_for_current_config ? "ok" : "warn"}">${selectedModel.complete_for_current_config ? "当前配置可用" : "缺少车辆导致阻塞"}</span>
+      `;
+      dom.modelWorkspaceList.innerHTML = `
+        <div>当前工作区要求: <code>${escapeHtml(requiredVehicleIds)}</code></div>
+        <div>已发现车辆: <code>${escapeHtml(foundVehicleIds)}</code></div>
+        <div>缺失车辆: <code>${escapeHtml(missingVehicleIds)}</code></div>
+        <div>阻塞原因: <code>${escapeHtml(selectedModel.completeness_reason || "--")}</code></div>
+      `;
+      dom.modelPathList.innerHTML = Object.entries(selectedModel.display_paths || selectedModel.paths || {}).length
+        ? Object.entries(selectedModel.display_paths || selectedModel.paths || {}).map(([vehicleId, path]) => `<div>V${vehicleId}: ${pathCode(path, path)}</div>`).join("")
+        : "<div>当前模型组没有可显示的路径。</div>";
+      dom.modelRequirementList.innerHTML = `
+        <div>当前工作区: <code>${escapeHtml(currentWorkspaceTopology().summary_text || topologyText(currentWorkspaceTopology()))}</code></div>
+        <div>可直接测试: <code>${selectedModel.complete_for_current_config ? "是" : "否"}</code></div>
+        <div>模型来源: <code>${escapeHtml(selectedSummary.selected_model_id || "--")}</code></div>
+        <div>测试状态: <code>${escapeHtml(selectedModel.complete_for_current_config ? "可以直接发起确定性测试" : "请先补齐缺失车辆模型")}</code></div>
+      `;
+    }
+
+    function renderModelSidePanel() {
+      const selectedModel = currentSelectedModel();
+      const currentTopology = currentWorkspaceTopology();
+      const recentJobs = state.jobs.filter((job) => job.kind === "test").slice(0, 3);
+
+      dom.modelSideList.innerHTML = `
+        <div class="data-card compact">
+          <strong>当前工作区要求</strong>
+          <div class="kv tight">
+            <div>工作区: <code>${escapeHtml(currentTopology.summary_text || topologyText(currentTopology))}</code></div>
+            <div>必需车辆 ID: <code>${escapeHtml(idsText(currentTopology.vehicle_ids || []))}</code></div>
+            <div>完整模型组: <code>${state.models.filter((model) => model.complete_for_current_config).length}</code></div>
+            ${selectedModel ? `<div>当前模型: <code>${escapeHtml(selectedModel.id)}</code></div>` : ""}
+          </div>
+        </div>
+        <div class="data-card compact">
+          <strong>最近测试任务</strong>
+          ${recentJobs.length ? recentJobs.map((job) => `
+            <div class="activity-item">
+              <div class="chip-row">
+                <span class="chip ${jobStatusClass(job.status)}">${escapeHtml(job.status)}</span>
+                <span class="chip">${escapeHtml(job.kind === "test" ? "测试" : job.kind)}</span>
+              </div>
+              <div class="table-title">${escapeHtml(job.id)}</div>
+              <div class="table-sub">${escapeHtml(job.message || "")}</div>
+            </div>
+          `).join("") : '<div class="empty">当前没有最近任务。</div>'}
+        </div>
+      `;
+    }
+
+    function renderActivityPanel(frame) {
+      const groups = [];
+      const waiting = frame.waiting_cargos || [];
+      const active = frame.active_cargos || [];
+      const completed = frame.recent_completed_cargos || [];
+      const alerts = frame.recent_alerts || [];
+
+      if (waiting.length) {
+        groups.push({
+          title: `Waiting cargos ${waiting.length}`,
+          items: waiting.slice(0, 3).map((cargo) => `
+            <div class="activity-item">
+              <div class="table-title">C${cargo.id}</div>
+              <div class="table-sub">IP${cargo.loading_station} · waiting ${number(cargo.wait_time, 1)}s</div>
+            </div>
+          `).join(""),
+        });
+      }
+      if (active.length) {
+        groups.push({
+          title: `Active cargos ${active.length}`,
+          items: active.slice(0, 3).map((cargo) => `
+            <div class="activity-item">
+              <div class="table-title">C${cargo.id}</div>
+              <div class="table-sub">${escapeHtml(cargo.destination_text || "--")} · target ${cargo.target_unloading_station != null ? `OP${cargo.target_unloading_station}` : "--"}</div>
+            </div>
+          `).join(""),
+        });
+      }
+      if (completed.length) {
+        groups.push({
+          title: `Recently completed ${completed.length}`,
+          items: completed.slice(-3).reverse().map((cargo) => `
+            <div class="activity-item">
+              <div class="table-title">C${cargo.id}</div>
+              <div class="table-sub">IP${cargo.loading_station} -> OP${cargo.unloading_station} · ${number(cargo.completion_time, 1)}s</div>
+            </div>
+          `).join(""),
+        });
+      }
+      if (alerts.length) {
+        groups.push({
+          title: `Recent alerts ${alerts.length}`,
+          items: alerts.slice(-3).reverse().map((alert) => `
+            <div class="activity-item">
+              <div class="table-title">${escapeHtml(String(alert.level || "").toUpperCase())}</div>
+              <div class="table-sub">${escapeHtml(alert.vehicle_ids?.map((id) => `V${id}`).join(" / ") || "--")} · ${number(alert.time, 1)}s</div>
+            </div>
+          `).join(""),
+        });
+      }
+
+      if (!groups.length) {
+        dom.activityList.innerHTML = '<div class="empty">No activity yet. Waiting cargos, active cargos, recent completions, and alerts will appear here.</div>';
+        return;
+      }
+
+      dom.activityList.innerHTML = groups.map((group) => `
+        <div class="activity-group">
+          <div class="activity-group-title">${escapeHtml(group.title)}</div>
+          ${group.items}
+        </div>
+      `).join("");
+    }
+
+    function renderWorkspaceMode() {
+      const modelsMode = state.activeLibraryTab === "models";
+      dom.episodeWorkspace.classList.toggle("hidden", modelsMode);
+      dom.modelWorkspace.classList.toggle("hidden", !modelsMode);
+      document.querySelectorAll(".episodes-only").forEach((node) => node.classList.toggle("hidden", modelsMode));
+      document.querySelectorAll(".models-only").forEach((node) => node.classList.toggle("hidden", !modelsMode));
+      dom.topologyInline.textContent = modelsMode
+        ? "当前视图: Models 就绪 / 测试工作区"
+        : "当前视图: 回放工作区";
+      renderLibrarySelectionDetail();
+      renderTestEntryPanel();
+      if (modelsMode) {
+        renderModelWorkspace();
+        renderModelSidePanel();
+      }
+    }
+
+    function renderTopologyPanels() {
+      const recorded = currentRecordedTopology();
+      const current = currentWorkspaceTopology();
+      const compatibility = currentTopologyCompatibility();
+      const statusText = compatibility.status === "match" ? "匹配" : "不匹配";
+      const mismatchHeadline = compatibility.status === "match"
+        ? "Recorded 拓扑与当前工作区一致"
+        : "Recorded 拓扑与当前工作区不一致";
+      const primaryDelta = compatibility.differences?.length
+        ? compatibility.differences.slice(0, 2).join(" · ")
+        : "当前回放可以直接按录制拓扑阅读。";
+
+      dom.compatibilityBadge.dataset.status = compatibility.status || "mismatch";
+      dom.compatibilityBadge.textContent = statusText;
+      dom.compatibilityHeadline.textContent = mismatchHeadline;
+      dom.compatibilitySummary.textContent = compatibility.status === "match"
+        ? compatibility.summary_line
+        : `${compatibility.summary_line} · ${primaryDelta}`;
+
+      dom.topologyDeltaSummary.textContent = compatibility.status === "match"
+        ? "Recorded 与 Current 使用同一套车辆和站点布局。"
+        : "下方只列出真正影响理解回放或 rerun today 的拓扑差异。";
+      dom.topologyDelta.innerHTML = compatibility.differences?.length
+        ? compatibility.differences.map((difference) => `<div>• ${escapeHtml(difference)}</div>`).join("")
+        : "<div>• 当前回放与当前工作区使用同一套拓扑。</div>";
+
+      dom.recordedTopologySummary.textContent = compatibility.status === "match"
+        ? "舞台与右侧详情可直接按这一套 recorded 拓扑阅读。"
+        : "舞台与右侧详情始终按 recorded 拓扑渲染，不会被当前 config.py 覆盖。";
+      dom.recordedTopology.innerHTML = `
+        <div>Recorded 摘要: <code>${escapeHtml(recorded.summary_text || topologyText(recorded))}</code></div>
+        <div>车辆 ID: <code>${escapeHtml(idsText(recorded.vehicle_ids))}</code></div>
+        <div>上料位置: <code>${escapeHtml(positionsText(recorded.loading_positions))}</code></div>
+        <div>下料位置: <code>${escapeHtml(positionsText(recorded.unloading_positions))}</code></div>
+        <div>模型映射 ID: <code>${escapeHtml(idsText(recorded.model_vehicle_ids))}</code></div>
+      `;
+
+      dom.currentConfigSummary.textContent = "当前 config.py 仅用于 rerun today、模型就绪判断和规则说明。";
+      dom.currentConfigList.innerHTML = `
+        <div>Current 摘要: <code>${escapeHtml(current.summary_text || topologyText(current))}</code></div>
+        <div>必需车辆 ID: <code>${escapeHtml(idsText(current.vehicle_ids))}</code></div>
+        <div>上料位置: <code>${escapeHtml(positionsText(current.loading_positions))}</code></div>
+        <div>下料位置: <code>${escapeHtml(positionsText(current.unloading_positions))}</code></div>
+        <div>轨道长度: <code>${number(current.track_length, 1)}</code></div>
+      `;
+    }
+
+    function renderWorkspaceRules() {
+      const configSnapshot = currentConfigSnapshot() || {};
+      const vehicleLayout = configSnapshot.vehicle_layout || {};
+      const stations = configSnapshot.stations || {};
+      const cargoRules = configSnapshot.cargo_rules || {};
+      const routingRules = configSnapshot.routing_rules || {};
+      const safetyRules = configSnapshot.safety_rules || {};
+      const timing = configSnapshot.timing || {};
+      const vehicleConfigs = vehicleLayout.vehicle_configs || [];
+      const loadingConfigs = stations.loading_station_configs || [];
+      const unloadingConfigs = stations.unloading_station_configs || [];
+      const loadingDefaults = routingRules.loading_station_defaults || [];
+
+      const routingSummary = loadingDefaults.length
+        ? loadingDefaults.map((item) => {
+          const alts = Array.isArray(item.alternative_unloading_stations) && item.alternative_unloading_stations.length
+            ? item.alternative_unloading_stations.map((id) => `OP${id}`).join(", ")
+            : "无";
+          return `<div>IP${item.id}: <code>${escapeHtml(item.paper_type || "--")}</code> -> 主 <code>OP${item.primary_unloading_station ?? "--"}</code> / 备 <code>${escapeHtml(alts)}</code></div>`;
+        }).join("")
+        : "<div>当前快照没有定义默认路径。</div>";
+      const vehicleSummary = vehicleConfigs.length
+        ? vehicleConfigs.map((item) => `<div>V${item.id}: 初始位置 <code>${number(item.initial_position, 1)}m</code></div>`).join("")
+        : "<div>当前快照没有车辆初始化布局。</div>";
+      const loadingConfigSummary = loadingConfigs.length
+        ? loadingConfigs.map((item) => {
+          const alts = Array.isArray(item.alternative_unloading_stations) && item.alternative_unloading_stations.length
+            ? item.alternative_unloading_stations.map((id) => `OP${id}`).join(", ")
+            : "--";
+          return `<div>IP${item.id}: <code>${number(item.position, 1)}m</code> / ${escapeHtml(item.paper_type || "--")} / 主 <code>OP${item.primary_unloading_station ?? "--"}</code> / 备 <code>${escapeHtml(alts)}</code></div>`;
+        }).join("")
+        : "<div>当前快照没有上料口布局。</div>";
+      const unloadingConfigSummary = unloadingConfigs.length
+        ? unloadingConfigs.map((item) => `<div>OP${item.id}: <code>${number(item.position, 1)}m</code> / ${escapeHtml(item.side || "--")}</div>`).join("")
+        : "<div>当前快照没有下料口布局。</div>";
+
+      dom.workspaceRulesList.innerHTML = `
+        <div class="data-card compact">
+          <strong>车辆与站点布局</strong>
+          <div class="kv tight">
+            <div>必需车辆 ID: <code>${escapeHtml(idsText(vehicleLayout.required_vehicle_ids || []))}</code></div>
+            <div>vehicle_slot_count: <code>${escapeHtml(vehicleLayout.vehicle_slot_count ?? "--")}</code></div>
+            <div>上料位置: <code>${escapeHtml(positionsText(stations.loading_positions || []))}</code></div>
+            <div>下料位置: <code>${escapeHtml(positionsText(stations.unloading_positions || []))}</code></div>
+          </div>
+        </div>
+        <div class="data-card compact">
+          <strong>车辆初始化</strong>
+          <div class="kv tight">${vehicleSummary}</div>
+        </div>
+        <div class="data-card compact">
+          <strong>站点快照</strong>
+          <div class="kv tight">
+            ${loadingConfigSummary}
+            <div>---</div>
+            ${unloadingConfigSummary}
+          </div>
+        </div>
+        <div class="data-card compact">
+          <strong>卷纸与槽位规则</strong>
+          <div class="kv tight">
+            <div>卷纸类型: <code>${escapeHtml((cargoRules.roll_types || []).join(", ") || "--")}</code></div>
+            <div>小卷直径范围: <code>${escapeHtml(positionsText(cargoRules.small_roll_diameter_range || []))}m</code></div>
+            <div>大卷直径范围: <code>${escapeHtml(positionsText(cargoRules.large_roll_diameter_range || []))}m</code></div>
+            <div>小卷阈值: <code>${number(cargoRules.small_roll_diameter_limit, 1)}m</code></div>
+            <div>required_slots: <code>small<=limit ${cargoRules.required_slots_rules?.small_roll_at_or_below_limit ?? "--"} / small>limit ${cargoRules.required_slots_rules?.small_roll_above_limit ?? "--"} / large ${cargoRules.required_slots_rules?.large_roll ?? "--"}</code></div>
+          </div>
+        </div>
+        <div class="data-card compact">
+          <strong>路由与安全规则</strong>
+          <div class="kv tight">
+            <div>备选切换距离: <code>${number(routingRules.alternative_unloading_switch_distance, 1)}m</code></div>
+            <div>max_jerk: <code>${number(safetyRules.max_jerk, 2)}</code></div>
+            <div>方向死区: <code>${number(safetyRules.action_direction_deadband, 4)}</code></div>
+            <div>最小方向切换步数: <code>${escapeHtml(safetyRules.min_direction_change_interval_steps ?? "--")}</code></div>
+            <div>projection eps: <code>${number(safetyRules.safety_projection_eps, 6)}</code></div>
+            <div>决策 / 控制: <code>${number(timing.high_level_decision_interval, 1)} / ${number(timing.low_level_control_interval, 1)}s</code></div>
+          </div>
+        </div>
+        <div class="data-card compact">
+          <strong>上料路径默认规则</strong>
+          <div class="kv tight">${routingSummary}</div>
+        </div>
+      `;
+    }
+
     function renderSummary(frame) {
       const summary = currentSummary();
+      const metadata = currentMetadata();
+      const configSnapshot = currentConfigSnapshot() || {};
+      const historyStats = metadata.training_stats || {};
+      const provenance = metadata.data_provenance || {};
+      const learning = configSnapshot.learning || {};
       const system = frame.system || {};
       const mappingEntries = Object.entries(summary.model_mapping || {});
+      const selectedModelId = metadata.selected_model_id || summary.selected_model_id;
       const chips = [];
-      if (summary.kind) chips.push(`<span class="chip alt">${escapeHtml(summary.kind)}</span>`);
+      if (summary.kind) chips.push(`<span class="chip ok">${summary.kind === "test" ? "测试回放" : "回放"}</span>`);
       if (summary.controller_mode) chips.push(`<span class="chip">${escapeHtml(summary.controller_mode)}</span>`);
       if (summary.seed != null) chips.push(`<span class="chip">seed ${summary.seed}</span>`);
       if (summary.visualization_sampling_interval != null) chips.push(`<span class="chip">采样 ${number(summary.visualization_sampling_interval, 1)}s</span>`);
-      if ((system.safety_violations || []).length) chips.push(`<span class="chip warn">Safety V${system.safety_violations.join(", V")}</span>`);
+      if (selectedModelId) chips.push(`<span class="chip alt">模型 ${escapeHtml(selectedModelId)}</span>`);
+      if (metadata.deterministic_inference === true) chips.push('<span class="chip ok">确定性</span>');
+      if ((system.safety_violations || []).length) chips.push(`<span class="chip warn">安全 V${system.safety_violations.join(", V")}</span>`);
+
+      const currentTopology = currentWorkspaceTopology();
+      const recordedTopology = currentRecordedTopology();
+      const statsNote = historyStats.available
+        ? `best_avg_reward ${number(historyStats.best_avg_reward, 3)} · latest_reward ${number(historyStats.latest_reward, 3)}`
+        : "未记录 history_stats.json";
+      const mappingSummary = mappingEntries.length
+        ? mappingEntries.map(([vehicleId, path]) => `<div>V${vehicleId}: ${pathCode(path, compactPath(path))}</div>`).join("")
+        : "<div>当前回放没有固定模型映射。</div>";
 
       dom.summaryList.innerHTML = `
-        <div class="data-card">
+        <div class="data-card compact">
           <strong>运行摘要</strong>
           <div class="chip-row">${chips.join("") || '<span class="chip">无</span>'}</div>
-          <div class="kv">
+          <div class="kv tight">
             <div>job_id: <code>${escapeHtml(summary.job_id || "--")}</code></div>
             <div>episode_id: <code>${escapeHtml(summary.episode_id || "--")}</code></div>
+            <div>created_at: <code>${escapeHtml(summary.created_at || "--")}</code></div>
             <div>episode_index: <code>${escapeHtml(summary.episode_index || "--")}</code></div>
-            <div>生成货物: <code>${summary.generated_cargos ?? "--"}</code></div>
-            <div>平均完成时间: <code>${number(summary.average_completion_time, 1)}s</code></div>
-            <div>创建时间: <code>${escapeHtml(summary.created_at || "--")}</code></div>
+            <div>selected_model_id: <code>${escapeHtml(selectedModelId || "--")}</code></div>
+            <div>录制拓扑: <code>${escapeHtml(recordedTopology.summary_text || topologyText(recordedTopology))}</code></div>
+            <div>当前工作区: <code>${escapeHtml(currentTopology.summary_text || topologyText(currentTopology))}</code></div>
           </div>
         </div>
-        <div class="data-card">
-          <strong>模型映射</strong>
-          <div class="kv">
-            ${mappingEntries.length ? mappingEntries.map(([vehicleId, path]) => `<div>V${vehicleId}: <code>${escapeHtml(path)}</code></div>`).join("") : "<div>训练回放没有固定模型映射，使用的是当时的在线策略状态。</div>"}
+
+        <div class="data-card compact">
+          <strong>数据来源与产物</strong>
+          <div class="chip-row">
+            <span class="chip ok">${escapeHtml(provenance.kind || "seeded_simulation")}</span>
+            <span class="chip">${historyStats.available ? "有统计" : "无统计"}</span>
           </div>
+          <div class="kv tight">
+            <div>config_source: ${pathCode(provenance.config_source?.path || configSnapshot.source_file, provenance.config_source?.display_path || compactPath(configSnapshot.source_file))}</div>
+            <div>episode_dir: ${pathCode(metadata.paths?.episode_dir, metadata.paths?.episode_dir_display)}</div>
+            <div>report_html: ${pathCode(metadata.paths?.report_path, metadata.paths?.report_path_display)}</div>
+            <div>source_model: ${pathCode(metadata.source_model_path || summary.source_model_path, compactPath(metadata.source_model_path || summary.source_model_path))}</div>
+            <div>recorded 上/下料位置: <code>${escapeHtml(positionsText(recordedTopology.loading_positions))}</code> / <code>${escapeHtml(positionsText(recordedTopology.unloading_positions))}</code></div>
+          </div>
+        </div>
+
+        <div class="data-card compact">
+          <strong>算法与扩展</strong>
+          <div class="chip-row">
+            <span class="chip ok">测试回放</span>
+            ${configSnapshot.source_file ? `<span class="chip">当前 config.py</span>` : ""}
+          </div>
+          <div class="kv tight">
+            <div>controller_mode: <code>${escapeHtml(summary.controller_mode || "--")}</code></div>
+            <div>learning_rate / batch_size: <code>${number(learning.learning_rate, 6)}</code> / <code>${escapeHtml(learning.batch_size ?? "--")}</code></div>
+            <div>gamma / hidden_dim: <code>${number(learning.gamma, 2)}</code> / <code>${escapeHtml(learning.hidden_dim ?? "--")}</code></div>
+            <div>必需车辆 ID: <code>${escapeHtml(idsText(configSnapshot.vehicle_layout?.required_vehicle_ids || []))}</code></div>
+            <div>历史统计: <code>${escapeHtml(statsNote)}</code></div>
+          </div>
+          <details class="summary-details">
+            <summary>展开历史统计与模型映射</summary>
+            <div class="kv tight">
+              <div>history_stats: ${pathCode(historyStats.path, historyStats.display_path)}</div>
+              <div>latest_completion: <code>${historyStats.latest_completion != null ? String(historyStats.latest_completion) : "--"}</code></div>
+              <div>latest_actor_loss / critic_loss: <code>${number(historyStats.latest_actor_loss, 4)}</code> / <code>${number(historyStats.latest_critic_loss, 4)}</code></div>
+              <div>scheduler: <code>${(learning.scheduler?.enabled ?? learning.lr_scheduler_enabled) ? `WarmCosine (${learning.scheduler?.warmup_episodes ?? learning.lr_warmup_episodes ?? "--"}ep)` : "禁用"}</code></div>
+            </div>
+            <div class="kv tight">${mappingSummary}</div>
+          </details>
         </div>
       `;
     }
 
     function renderEpisodeHeader(frame) {
       const summary = currentSummary();
-      dom.episodeTitle.textContent = summary.episode_id || summary.run_label || "AGV Episode Replay";
-      dom.episodeSubtitle.textContent = summary.kind === "train"
-        ? "训练 episode 回放，包含当次采样状态、货物字段、站点状态与历史统计。"
-        : "测试 episode 回放，使用选定模型做 deterministic 推理。";
+      const selectedModelId = currentMetadata().selected_model_id || summary.selected_model_id;
+      const compatibility = currentTopologyCompatibility();
+      const compatibilityLabel = compatibility.status === "match" ? "匹配" : "不匹配";
+      const durationText = Number.isFinite(Number(summary.episode_duration))
+        ? `${number(summary.episode_duration, 0)}s`
+        : "--";
+      dom.episodeTitle.textContent = summary.episode_id || summary.run_label || "AGV 回放";
+      dom.episodeSubtitle.textContent = "此视图由录制回放数据驱动；当前工作区仅用于对照和 rerun today。";
       dom.episodeMeta.innerHTML = `
-        kind: ${escapeHtml(summary.kind || "--")}<br/>
-        episode: ${escapeHtml(summary.episode_index || "--")}<br/>
-        seed: ${escapeHtml(summary.seed || "--")}<br/>
-        duration: ${number(summary.episode_duration, 0)}s
+        <div>类型 <code>${escapeHtml(summary.kind === "test" ? "测试" : "回放")}</code> · episode <code>${escapeHtml(summary.episode_index || "--")}</code></div>
+        <div>模型 <code>${escapeHtml(selectedModelId || "--")}</code> · seed <code>${escapeHtml(summary.seed || "--")}</code></div>
+        <div>时长 <code>${escapeHtml(durationText)}</code> · 拓扑 <code>${escapeHtml(compatibilityLabel)}</code></div>
       `;
       dom.timeLabel.textContent = formatTime(frame.time || 0);
-      dom.frameLabel.textContent = `Frame ${state.currentIndex + 1} / ${Math.max(currentFrames().length, 1)}`;
-      dom.runtimeMeta.textContent = `模式: ${state.apiEnabled ? "本地后端已连接" : (state.embeddedMode ? "嵌入式回放" : "离线模板")}`;
+      dom.frameLabel.textContent = `帧 ${state.currentIndex + 1} / ${Math.max(currentFrames().length, 1)}`;
+      dom.runtimeMeta.textContent = `模式: ${state.apiEnabled ? "本地后端已连接" : (state.embeddedMode ? "嵌入式回放" : "离线模板")} · ${state.activeLibraryTab === "models" ? "模型工作区" : "回放工作区"}`;
     }
 
     function renderFrame(index) {
@@ -1354,137 +3238,117 @@
       const frame = currentFrame(state.currentIndex);
       renderEpisodeHeader(frame);
       renderTrack(frame);
+      renderTrackLegend(frame);
       renderMetrics(frame);
       renderVehicleCards(frame);
       renderLoadingStations(frame);
       renderUnloadingStations(frame);
-      renderWaitingCargos(frame);
-      renderActiveCargos(frame);
-      renderCompleted(frame);
-      renderAlerts(frame);
+      renderActivityPanel(frame);
+      renderTopologyPanels();
+      renderWorkspaceRules();
       renderSummary(frame);
+      renderWorkspaceMode();
     }
 
-    function chartSeriesPath(points, width, height, minValue, maxValue) {
-      if (!points.length) return "";
-      const range = maxValue - minValue || 1;
-      return points.map((value, index) => {
-        const x = (index / Math.max(points.length - 1, 1)) * width;
-        const y = height - ((value - minValue) / range) * height;
-        return `${index === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
-      }).join(" ");
+    function setLibraryTab(tab) {
+      state.activeLibraryTab = tab === "models" ? "models" : "episodes";
+      const showEpisodes = state.activeLibraryTab === "episodes";
+      dom.episodeLibrary.classList.toggle("hidden", !showEpisodes);
+      dom.modelLibrary.classList.toggle("hidden", showEpisodes);
+      dom.episodesTab.classList.toggle("active", showEpisodes);
+      dom.modelsTab.classList.toggle("active", !showEpisodes);
+      dom.libraryCaption.textContent = showEpisodes
+        ? "浏览测试回放记录，优先展示 recorded topology 与当前工作区差异。"
+        : "浏览模型就绪状态，确认覆盖与缺失后再发起确定性测试。";
+      renderEpisodeLibrary();
+      renderModelLibrary();
+      renderWorkspaceMode();
     }
-
-    function renderChart(svg, series, width, height) {
-      svg.innerHTML = "";
-      const values = series.flatMap((item) => item.values).filter((value) => Number.isFinite(Number(value)));
-      if (!values.length) {
-        const text = createSvg("text", {
-          x: width / 2,
-          y: height / 2,
-          "text-anchor": "middle",
-          fill: "#6a7478",
-          "font-size": 12,
-          "font-family": "Cascadia Mono, Consolas, monospace",
-        });
-        text.textContent = "No data";
-        svg.appendChild(text);
-        return;
-      }
-      const minValue = Math.min(...values);
-      const maxValue = Math.max(...values);
-      svg.appendChild(createSvg("rect", { x: 0, y: 0, width, height, rx: 16, fill: "rgba(255,255,255,0.55)" }));
-      [0.2, 0.5, 0.8].forEach((ratio) => {
-        svg.appendChild(createSvg("line", {
-          x1: 0, y1: height * ratio, x2: width, y2: height * ratio,
-          stroke: "rgba(31, 44, 50, 0.09)", "stroke-width": 1,
-        }));
-      });
-      series.forEach((item) => {
-        svg.appendChild(createSvg("path", {
-          d: chartSeriesPath(item.values.map((value) => Number(value)), width, height, minValue, maxValue),
-          fill: "none",
-          stroke: item.color,
-          "stroke-width": item.width || 2.4,
-          "stroke-linecap": "round",
-          "stroke-linejoin": "round",
-        }));
-      });
-    }
-
-    function renderCharts() {
-      const statistics = currentStatistics();
-      const widthStandard = 300;
-      const height = 150;
-      const widthWide = 620;
-      const vehicleIds = Object.keys(statistics.vehicle_positions || {});
-      const seriesColor = (vehicleId) =>
-        getComputedStyle(document.documentElement).getPropertyValue(`--vehicle-${vehicleId}`) ||
-        ["#d4513d", "#c48d28", "#6656b3", "#77573f"][Number(vehicleId) % 4];
-
-      renderChart(dom.chartCompleted, [
-        { values: statistics.completed || [], color: "#4b9f5f" },
-        { values: statistics.timeout || [], color: "#bf5a36" },
-      ], widthStandard, height);
-      renderChart(dom.chartWait, [{ values: statistics.avg_wait_time || [], color: "#176087" }], widthStandard, height);
-      renderChart(dom.chartCargo, [
-        { values: statistics.cargo_count || [], color: "#6e4f1f" },
-        { values: statistics.waiting_cargos || [], color: "#8b6a36" },
-        { values: statistics.on_vehicle_cargos || [], color: "#20303a" },
-      ], widthStandard, height);
-      renderChart(dom.chartVelocity, vehicleIds.map((vehicleId) => ({
-        values: statistics.vehicle_velocities?.[vehicleId] || [],
-        color: seriesColor(vehicleId),
-      })), widthStandard, height);
-      renderChart(dom.chartPosition, vehicleIds.map((vehicleId) => ({
-        values: statistics.vehicle_positions?.[vehicleId] || [],
-        color: seriesColor(vehicleId),
-      })), widthWide, height);
+    function setTestHint(message, tone = "warn") {
+      dom.testHint.textContent = message;
+      dom.testHint.dataset.tone = tone;
     }
 
     function populateModelSelect() {
+      const previousValue = dom.modelSelect.value || state.selectedModelId || null;
       const options = state.models
-        .filter((model) => model.complete)
-        .map((model) => `<option value="${escapeHtml(model.id)}">${escapeHtml(model.id)}</option>`)
+        .map((model) => `<option value="${escapeHtml(model.id)}">${escapeHtml(model.id)}${model.complete_for_current_config ? " · 就绪" : " · 阻塞"}</option>`)
         .join("");
-      dom.modelSelect.innerHTML = options || '<option value="">暂无完整模型组</option>';
-      dom.modelSelect.disabled = !options;
+      dom.modelSelect.innerHTML = options || '<option value="">暂无可识别模型组</option>';
+
+      const defaultModel = state.models.find((model) => model.id === previousValue)
+        || state.models.find((model) => model.complete_for_current_config)
+        || state.models[0]
+        || null;
+      dom.modelSelect.disabled = !state.apiEnabled || !state.models.length;
+      dom.modelSelect.value = defaultModel?.id || "";
+      if (defaultModel) {
+        state.selectedModelId = state.selectedModelId && state.models.some((model) => model.id === state.selectedModelId)
+          ? state.selectedModelId
+          : defaultModel.id;
+      }
+
+      const testModel = currentTestModel();
+      const completeCount = state.models.filter((model) => model.complete_for_current_config).length;
+      if (testModel && testModel.complete_for_current_config) {
+        setTestHint(`当前目标 ${testModel.id} 已可直接发起确定性测试。`, "ok");
+      } else if (testModel) {
+        setTestHint(testModel.completeness_reason || "当前选中模型组尚未覆盖当前工作区要求的车辆。", "warn");
+      } else if (completeCount) {
+        setTestHint(`已找到 ${completeCount} 个可直接用于当前工作区测试的完整模型组。`, "ok");
+      } else {
+        setTestHint(state.models.length ? "当前模型组都还没覆盖完整车辆。" : "当前 models 目录还没有可识别的模型组。", "warn");
+      }
+      document.getElementById("testButton").disabled = !selectedModelReadyForTest();
     }
 
     function renderJobs() {
-      if (!state.jobs.length) {
-        dom.jobList.innerHTML = '<div class="empty">当前没有运行中的任务。</div>';
+      const visibleJobs = state.jobs.filter((job) => job.kind === "test");
+      if (!visibleJobs.length) {
+        dom.jobList.innerHTML = '<div class="empty">暂无 test 任务记录。</div>';
         return;
       }
-      dom.jobList.innerHTML = state.jobs.map((job) => `
+      dom.jobList.innerHTML = visibleJobs.map((job) => `
         <div class="job-row">
           <strong>${escapeHtml(job.id)}</strong>
           <div class="chip-row">
             <span class="chip ${job.status === "completed" ? "ok" : (job.status === "failed" ? "warn" : "alt")}">${escapeHtml(job.status)}</span>
-            <span class="chip">progress ${(Number(job.progress || 0) * 100).toFixed(0)}%</span>
+            <span class="chip">进度 ${(Number(job.progress || 0) * 100).toFixed(0)}%</span>
             <span class="chip">${escapeHtml(job.kind)}</span>
+            ${job.data_source_label ? `<span class="chip alt">${escapeHtml(job.data_source_label)}</span>` : ""}
           </div>
-          <div class="job-meta">${escapeHtml(job.message || "")}</div>
-          <div class="job-meta">episodes ${job.completed_episodes || 0} / ${job.episode_count || 0}</div>
+          <div class="job-meta wrap">${escapeHtml(job.message || "")}</div>
+          <div class="job-meta wrap">
+            episode ${job.completed_episodes || 0} / ${job.episode_count || 0}
+            ${job.kind === "test" ? ` · seed ${escapeHtml(job.config_summary?.seed ?? "--")} · 模型 ${escapeHtml(job.config_summary?.model_id || "--")}` : ""}
+          </div>
+          ${job.generated_model_sets?.length ? `<div class="job-meta wrap">生成模型: ${escapeHtml(job.generated_model_sets.join(", "))}</div>` : ""}
+          ${job.output_dir_display ? `<div class="job-meta wrap">输出目录: ${escapeHtml(job.output_dir_display)}</div>` : ""}
+          ${job.error ? `<details class="job-error"><summary>查看错误详情</summary><pre>${escapeHtml(job.error)}</pre></details>` : ""}
         </div>
       `).join("");
     }
 
     function renderEpisodeLibrary() {
-      if (!state.episodes.length) {
-        dom.episodeLibrary.innerHTML = '<div class="empty">还没有保存的 episode。启动 train / test 后，这里会出现可回放记录。</div>';
+      const visibleEpisodes = state.episodes.filter((episode) => episode.kind === "test");
+      if (!visibleEpisodes.length) {
+        dom.episodeLibrary.innerHTML = '<div class="empty">暂无 test episode 记录。</div>';
         return;
       }
-      dom.episodeLibrary.innerHTML = state.episodes.map((episode) => `
-        <button class="list-row ${state.currentEpisodeId === episode.episode_id ? "active" : ""}" data-episode-id="${escapeHtml(episode.episode_id)}">
+      const activeEpisodeId = activeEpisodeListId();
+      dom.episodeLibrary.innerHTML = visibleEpisodes.map((episode) => `
+        <button class="list-row ${activeEpisodeId === episode.episode_id ? "active" : ""} ${state.loadingEpisodeId === episode.episode_id ? "loading" : ""}" data-episode-id="${escapeHtml(episode.episode_id)}">
           <strong>${escapeHtml(episode.episode_id)}</strong>
           <div class="chip-row">
-            <span class="chip ${episode.kind === "train" ? "alt" : "ok"}">${escapeHtml(episode.kind || "--")}</span>
+            <span class="chip ok">测试</span>
+            <span class="chip ${episode.topology_compatibility?.status === "match" ? "ok" : "warn"}">${escapeHtml(episode.topology_compatibility?.status === "match" ? "匹配" : (episode.topology_compatibility?.status === "mismatch" ? "不匹配" : "未知"))}</span>
             <span class="chip">seed ${escapeHtml(episode.seed || "--")}</span>
-            <span class="chip">completed ${escapeHtml(episode.completed_cargos || 0)}</span>
+            <span class="chip">完成 ${escapeHtml(episode.completed_cargos || 0)}</span>
+            ${state.loadingEpisodeId === episode.episode_id ? '<span class="chip alt">加载中</span>' : ""}
+            ${episode.selected_model_id ? `<span class="chip alt">${escapeHtml(episode.selected_model_id)}</span>` : ""}
           </div>
-          <div class="list-meta">${escapeHtml(episode.created_at || "")}</div>
-          <div class="list-meta">${escapeHtml(episode.controller_mode || "")}</div>
+          <div class="list-meta wrap">${escapeHtml(episode.recorded_topology?.summary_text || episode.topology_compatibility?.recorded_text || episode.topology_compatibility?.summary_line || "--")}</div>
+          <div class="list-meta wrap">${escapeHtml(episode.created_at || "--")} · ${escapeHtml(episode.controller_mode || "--")}</div>
         </button>
       `).join("");
       dom.episodeLibrary.querySelectorAll("[data-episode-id]").forEach((node) => {
@@ -1493,24 +3357,41 @@
     }
 
     function renderModelLibrary() {
-      if (!state.models.length) {
-        dom.modelLibrary.innerHTML = '<div class="empty">当前 models 目录没有可识别的模型组。</div>';
+      const visibleModels = state.models || [];
+      if (!visibleModels.length) {
+        dom.modelLibrary.innerHTML = '<div class="empty">暂无可识别的模型组。</div>';
         return;
       }
-      dom.modelLibrary.innerHTML = state.models.map((model) => `
-        <div class="list-row ${dom.modelSelect.value === model.id ? "active" : ""}">
+      const activeModelId = currentSelectedModel()?.id;
+      dom.modelLibrary.innerHTML = visibleModels.map((model) => `
+        <button class="list-row ${activeModelId === model.id ? "active" : ""}" data-model-id="${escapeHtml(model.id)}">
           <strong>${escapeHtml(model.id)}</strong>
           <div class="chip-row">
-            <span class="chip ${model.complete ? "ok" : "warn"}">${model.complete ? "complete" : "incomplete"}</span>
-            <span class="chip">vehicles ${escapeHtml(model.vehicle_ids.join(", "))}</span>
+            <span class="chip ${model.complete_for_current_config ? "ok" : "warn"}">${model.complete_for_current_config ? "就绪" : "阻塞"}</span>
+            <span class="chip">已发现 ${escapeHtml(idsText(model.vehicle_ids || []))}</span>
+            <span class="chip alt">缺失 ${escapeHtml(idsText(model.missing_vehicle_ids || []))}</span>
           </div>
-          <div class="list-meta">${escapeHtml(model.updated_at || "")}</div>
-          <div class="list-meta">${Object.entries(model.paths || {}).map(([vehicleId, path]) => `V${vehicleId}: ${path}`).join(" | ")}</div>
-        </div>
+          <div class="list-meta wrap">${escapeHtml(model.completeness_reason || "")}</div>
+          <div class="list-meta wrap">${escapeHtml(model.updated_at || "--")} · 必需 ${escapeHtml(idsText(model.required_vehicle_ids || []))}</div>
+        </button>
       `).join("");
+      dom.modelLibrary.querySelectorAll("[data-model-id]").forEach((node) => {
+        node.addEventListener("click", () => {
+          state.selectedModelId = node.getAttribute("data-model-id");
+          if (state.models.some((model) => model.id === state.selectedModelId)) {
+            dom.modelSelect.value = state.selectedModelId;
+          }
+          populateModelSelect();
+          renderModelLibrary();
+          renderWorkspaceMode();
+        });
+      });
     }
 
     function loadEpisodePayload(payload) {
+      rememberEpisodePayload(payload);
+      state.loadingEpisodeId = null;
+      state.episodeAbortController = null;
       state.episode = payload;
       state.currentEpisodeId = payload?.summary?.episode_id || null;
       state.currentIndex = 0;
@@ -1518,14 +3399,17 @@
       dom.timeSlider.max = String(Math.max(frames.length - 1, 0));
       dom.timeSlider.value = "0";
       renderFrame(0);
-      renderCharts();
       renderEpisodeLibrary();
+      renderWorkspaceMode();
     }
 
     async function fetchJson(url, options = {}) {
+      const { signal, ...restOptions } = options;
       const response = await fetch(url, {
         headers: { "Content-Type": "application/json" },
-        ...options,
+        cache: "no-store",
+        signal,
+        ...restOptions,
       });
       if (!response.ok) {
         const text = await response.text();
@@ -1535,61 +3419,165 @@
     }
 
     function toggleControlAvailability(enabled) {
-      [dom.trainEpisodes, dom.trainSampleInterval, dom.modelSelect, dom.testEpisodes, dom.testSeed, dom.testSampleInterval, dom.testDuration].forEach((node) => {
+      [dom.testEpisodes, dom.testSeed, dom.testSampleInterval, dom.testDuration].forEach((node) => {
         node.disabled = !enabled;
       });
-      document.getElementById("trainButton").disabled = !enabled;
-      document.getElementById("testButton").disabled = !enabled || !state.models.some((model) => model.complete);
+      document.getElementById("testButton").disabled = !enabled;
+      if (!enabled) {
+        dom.modelSelect.disabled = true;
+      }
     }
 
     async function refreshState(initial = false) {
-      renderJobs();
+      if (state.refreshPromise) {
+        return state.refreshPromise;
+      }
+      state.refreshPromise = (async () => {
+        renderJobs();
       if (!state.hasApi) {
         state.apiEnabled = false;
-        setStatus(state.embeddedMode ? "已载入嵌入式回放，未连接本地后端" : "当前为静态模板模式，请先启动本地服务", state.embeddedMode ? "ok" : "warn");
-        dom.workspaceHint.textContent = state.embeddedMode
-          ? "当前文件已经内嵌 episode 数据，可以离线回放。若要触发 train / test，请运行 `python -m ui.simulation_web`。"
-          : "请运行 `python -m ui.simulation_web`，然后通过 http://127.0.0.1:8000/simulation_report.html 打开页面。";
-        toggleControlAvailability(false);
-        renderEpisodeLibrary();
-        renderModelLibrary();
-        return;
-      }
-
-      try {
-        const payload = await fetchJson("/api/state");
-        state.apiEnabled = Boolean(payload.api_enabled);
-        state.jobs = payload.jobs || [];
-        state.models = payload.models || [];
-        state.episodes = payload.episodes || [];
-        toggleControlAvailability(state.apiEnabled);
-        populateModelSelect();
-        renderJobs();
-        renderEpisodeLibrary();
-        renderModelLibrary();
-        setStatus(state.apiEnabled ? "本地后端已连接，可直接发起 train / test" : "后端未启用", state.apiEnabled ? "ok" : "warn");
-        dom.workspaceHint.textContent = payload.workspace ? `工作区: ${payload.workspace}` : "工作区路径不可用";
-        if ((!state.episode || !currentFrames().length) && state.episodes.length) {
-          await loadEpisodeById(state.episodes[0].episode_id);
-        } else if (state.currentEpisodeId) {
+          setStatus(state.embeddedMode ? "已载入嵌入式回放，未连接本地后端" : "静态模板模式，请先启动本地服务", state.embeddedMode ? "ok" : "warn");
+          dom.workspaceHint.textContent = state.embeddedMode
+            ? "当前文件已经内嵌 episode 数据，可以离线回放。若要发起确定性测试，请运行 `python -m ui.simulation_web`。"
+            : "请运行 `python -m ui.simulation_web`，然后通过本地服务地址打开页面。";
+          toggleControlAvailability(false);
           renderEpisodeLibrary();
+          renderModelLibrary();
+          if (currentFrames().length) {
+            renderFrame(state.currentIndex);
+          } else {
+            renderWorkspaceMode();
+          }
+          return;
         }
-      } catch (error) {
-        state.apiEnabled = false;
-        toggleControlAvailability(false);
-        renderJobs();
-        renderEpisodeLibrary();
-        renderModelLibrary();
-        setStatus(state.embeddedMode ? "已载入嵌入式回放，但本地 API 暂时不可用" : "无法连接本地后端，请运行 `python -m ui.simulation_web`", "warn");
-        if (!initial) console.error(error);
+
+        try {
+          const payload = await fetchJson("/api/state");
+          state.apiEnabled = Boolean(payload.api_enabled);
+          state.jobs = payload.jobs || [];
+          state.models = payload.models || [];
+          state.episodes = payload.episodes || [];
+          state.configSnapshot = payload.config_snapshot || state.configSnapshot;
+          toggleControlAvailability(state.apiEnabled);
+          populateModelSelect();
+          renderJobs();
+          renderEpisodeLibrary();
+          renderModelLibrary();
+          if (currentFrames().length) {
+            renderFrame(state.currentIndex);
+          } else {
+            renderWorkspaceMode();
+          }
+          setStatus(state.apiEnabled ? "本地后端已连接，可直接发起确定性测试" : "后端未启用", state.apiEnabled ? "ok" : "warn");
+          dom.workspaceHint.textContent = payload.workspace ? `工作区: ${payload.workspace} | 配置来自当前 config.py` : "工作区路径不可用";
+          const visibleEpisodes = state.episodes.filter((episode) => episode.kind === "test");
+          const currentEpisodeVisible = state.currentEpisodeId
+            ? visibleEpisodes.some((episode) => episode.episode_id === state.currentEpisodeId)
+            : false;
+          if ((!state.episode || !currentFrames().length || !currentEpisodeVisible) && visibleEpisodes.length && !state.loadingEpisodeId) {
+            const preferredEpisode = visibleEpisodes.find((episode) => episode.episode_id === state.preferredEpisodeId);
+            const nextEpisode = preferredEpisode || visibleEpisodes[0] || null;
+            if (nextEpisode) {
+              await loadEpisodeById(nextEpisode.episode_id, { auto: true }).catch(() => null);
+            }
+          } else if (state.currentEpisodeId || state.episode) {
+            renderEpisodeLibrary();
+          }
+        } catch (error) {
+          state.apiEnabled = false;
+          toggleControlAvailability(false);
+          renderJobs();
+          renderEpisodeLibrary();
+          renderModelLibrary();
+          if (currentFrames().length) {
+            renderFrame(state.currentIndex);
+          } else {
+            renderWorkspaceMode();
+          }
+          setStatus(state.embeddedMode || state.episode ? "已保留最近一次成功加载的回放，但本地 API 暂时不可用" : "无法连接本地后端，请运行 `python -m ui.simulation_web`", "warn");
+          if (state.episode) {
+            dom.workspaceHint.textContent = "本地 API 短暂不可用，当前工作台继续保留最近一次成功加载的回放。";
+          }
+          if (!initial) console.error(error);
+        }
+      })();
+      try {
+        return await state.refreshPromise;
+      } finally {
+        state.refreshPromise = null;
       }
     }
-
-    async function loadEpisodeById(episodeId) {
-      if (!episodeId || !state.hasApi) return;
+    async function loadEpisodeById(episodeId, { auto = false } = {}) {
+      if (!episodeId || !state.hasApi) return null;
+      if (episodeId === state.currentEpisodeId && currentFrames().length && !state.loadingEpisodeId) {
+        return state.episode;
+      }
+      if (state.loadingEpisodeId === episodeId && state.episodePromise) {
+        return state.episodePromise;
+      }
+      const cachedPayload = cachedEpisodePayload(episodeId);
+      const requestToken = ++state.episodeRequestToken;
+      if (state.episodeAbortController) {
+        state.episodeAbortController.abort();
+        state.episodeAbortController = null;
+      }
+      state.episodePromise = null;
       stopPlayback();
-      const payload = await fetchJson(`/api/episodes/${encodeURIComponent(episodeId)}`);
-      loadEpisodePayload(payload);
+      state.loadingEpisodeId = episodeId;
+      renderEpisodeLibrary();
+      if (cachedPayload) {
+        try {
+          loadEpisodePayload(cachedPayload);
+          state.loadingEpisodeId = null;
+          state.episodePromise = null;
+          renderEpisodeLibrary();
+          setStatus(`已从本地缓存切换 episode ${episodeId}`, "ok");
+          return cachedPayload;
+        } catch (error) {
+          state.loadingEpisodeId = null;
+          state.episodePromise = null;
+          throw error;
+        }
+      }
+      const controller = new AbortController();
+      state.episodeAbortController = controller;
+      setStatus(`正在加载 episode ${episodeId}`, "warn");
+      state.episodePromise = (async () => {
+        try {
+          const payload = await fetchJson(`/api/episodes/${encodeURIComponent(episodeId)}`, {
+            signal: controller.signal,
+          });
+          if (controller.signal.aborted || requestToken !== state.episodeRequestToken) {
+            return null;
+          }
+          rememberEpisodePayload(payload);
+          loadEpisodePayload(payload);
+          state.loadingEpisodeId = null;
+          if (!auto) {
+            setStatus(`已加载 episode ${episodeId}`, "ok");
+          }
+          return payload;
+        } catch (error) {
+          if (error && (error.name === "AbortError" || controller.signal.aborted || requestToken !== state.episodeRequestToken)) {
+            return null;
+          }
+          setStatus(`加载 episode 失败: ${error.message}`, "warn");
+          if (!auto) {
+            console.error(error);
+          }
+          throw error;
+        } finally {
+          if (state.episodeAbortController === controller) {
+            state.episodeAbortController = null;
+          }
+          if (requestToken === state.episodeRequestToken && state.loadingEpisodeId === episodeId) {
+            state.loadingEpisodeId = null;
+            renderEpisodeLibrary();
+          }
+          state.episodePromise = null;
+        }
+      })();
+      return state.episodePromise;
     }
 
     function stopPlayback() {
@@ -1615,24 +3603,6 @@
       }, Math.max(120, 700 / Math.max(speed, 0.1)));
       state.playing = true;
       dom.playButton.textContent = "暂停";
-    }
-
-    async function startTrain(event) {
-      event.preventDefault();
-      stopPlayback();
-      try {
-        const job = await fetchJson("/api/train", {
-          method: "POST",
-          body: JSON.stringify({
-            num_episodes: Number(dom.trainEpisodes.value || 5),
-            sample_interval: Number(dom.trainSampleInterval.value || 5),
-          }),
-        });
-        setStatus(`训练任务已创建: ${job.id}`, "ok");
-        await refreshState();
-      } catch (error) {
-        setStatus(`训练任务创建失败: ${error.message}`, "warn");
-      }
     }
 
     async function startTest(event) {
@@ -1668,24 +3638,43 @@
         stopPlayback();
         renderFrame(Number(event.target.value));
       });
-      dom.trainForm.addEventListener("submit", startTrain);
       dom.testForm.addEventListener("submit", startTest);
-      dom.refreshButton.addEventListener("click", () => refreshState());
+      dom.episodesTab.addEventListener("click", () => setLibraryTab("episodes"));
+      dom.modelsTab.addEventListener("click", () => setLibraryTab("models"));
+      dom.openModelsButton.addEventListener("click", () => setLibraryTab("models"));
+      dom.modelSelect.addEventListener("change", () => {
+        state.selectedModelId = dom.modelSelect.value || state.selectedModelId;
+        populateModelSelect();
+        renderModelLibrary();
+        renderWorkspaceMode();
+      });
+      dom.copySelectionButton.addEventListener("click", async () => {
+        const text = dom.copySelectionButton.dataset.copy || "";
+        if (!text) return;
+        try {
+          await navigator.clipboard.writeText(text);
+          setStatus("已复制当前选中条目的路径信息", "ok");
+        } catch (error) {
+          setStatus(`复制失败: ${error.message}`, "warn");
+        }
+      });
     }
 
     function initialRender() {
       bindEvents();
+      setLibraryTab(state.activeLibraryTab);
       if (state.episode) {
         loadEpisodePayload(state.episode);
         setStatus("已载入嵌入式回放", "ok");
         dom.workspaceHint.textContent = "当前 HTML 包含 episode 数据，可直接离线回放；连接本地后端后还能切换模型和任务。";
+      } else if (state.preferredEpisodeId && state.hasApi) {
+        loadEpisodeById(state.preferredEpisodeId, { auto: true }).catch(() => null);
       } else {
         renderFrame(0);
-        renderCharts();
       }
       refreshState(true);
       if (state.hasApi) {
-        window.setInterval(() => refreshState(), 4000);
+        state.refreshIntervalId = window.setInterval(() => refreshState(), 4000);
       }
     }
 
